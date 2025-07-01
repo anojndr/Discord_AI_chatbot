@@ -1,0 +1,364 @@
+package bot
+
+import (
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
+
+	"DiscordAIChatbot/internal/auth"
+	"DiscordAIChatbot/internal/config"
+	"DiscordAIChatbot/internal/utils"
+)
+
+// onReady handles the ready event
+func (b *Bot) onReady(s *discordgo.Session, event *discordgo.Ready) {
+	log.Printf("Bot is ready! Logged in as %s", event.User.String())
+
+	// Thread-safe access to config
+	b.mu.RLock()
+	clientID := b.config.ClientID
+	statusMessage := b.config.StatusMessage
+	b.mu.RUnlock()
+
+	// Set custom activity (now that websocket connection is established)
+	if statusMessage == "" {
+		statusMessage = "i love you"
+	}
+	if len(statusMessage) > config.MaxStatusMessageLength {
+		statusMessage = statusMessage[:config.MaxStatusMessageLength]
+	}
+
+	if err := s.UpdateGameStatus(0, statusMessage); err != nil {
+		// Non-fatal error, just log it
+		log.Printf("Failed to update game status: %v", err)
+	}
+
+	// Print invite URL if client ID is configured
+	if clientID != "" {
+		inviteURL := fmt.Sprintf("https://discord.com/oauth2/authorize?client_id=%s&permissions=412317273088&scope=bot", clientID)
+		log.Printf("\nBOT INVITE URL:\n%s\n", inviteURL)
+	}
+
+	// Register slash commands
+	err := b.registerCommands()
+	if err != nil {
+		log.Printf("Failed to register commands: %v", err)
+	}
+}
+
+// registerCommands registers slash commands
+func (b *Bot) registerCommands() error {
+	commands := []*discordgo.ApplicationCommand{
+		{
+			Name:        "model",
+			Description: "View or switch the current model",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:         discordgo.ApplicationCommandOptionString,
+					Name:         "model",
+					Description:  "The model to switch to",
+					Required:     true,
+					Autocomplete: true,
+				},
+			},
+		},
+		{
+			Name:        "systemprompt",
+			Description: "View, set, or clear your personal system prompt",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "action",
+					Description: "Action to perform",
+					Required:    true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{
+							Name:  "view",
+							Value: "view",
+						},
+						{
+							Name:  "set",
+							Value: "set",
+						},
+						{
+							Name:  "clear",
+							Value: "clear",
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "prompt",
+					Description: "The system prompt to set (required when action is 'set')",
+					Required:    false,
+				},
+			},
+		},
+		{
+			Name:        "apikeys",
+			Description: "View API key status and manage bad keys (admin only)",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "action",
+					Description: "Action to perform",
+					Required:    false,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{
+							Name:  "status",
+							Value: "status",
+						},
+						{
+							Name:  "reset",
+							Value: "reset",
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "provider",
+					Description: "Provider to reset bad keys for (required when action is 'reset')",
+					Required:    false,
+				},
+			},
+		},
+	}
+
+	for _, cmd := range commands {
+		_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "", cmd)
+		if err != nil {
+			return fmt.Errorf("failed to create command %s: %w", cmd.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// onInteractionCreate handles slash command interactions
+func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		b.handleSlashCommand(s, i)
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		b.handleAutocomplete(s, i)
+	case discordgo.InteractionMessageComponent:
+		b.handleButtonInteraction(s, i)
+	}
+}
+
+// onMessageCreate handles new messages
+func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
+	// Ignore bot messages
+	if m.Author.Bot {
+		return
+	}
+
+	// Check if this is a DM or if bot is mentioned
+	isDM := m.GuildID == ""
+	isMentioned := false
+
+	for _, user := range m.Mentions {
+		if user.ID == s.State.User.ID {
+			isMentioned = true
+			break
+		}
+	}
+
+	// Also check for "at ai" prefix (case insensitive)
+	isAtAI := strings.HasPrefix(strings.ToLower(strings.TrimSpace(m.Content)), "at ai")
+
+	if !isDM && !isMentioned && !isAtAI {
+		return
+	}
+
+	// Check permissions
+	if !b.permChecker.CheckPermissions(m) {
+		return
+	}
+
+	// Handle the message
+	go b.handleMessage(s, m)
+}
+
+// getProperMessageReference returns the appropriate MessageReference for a message
+// For synthetic retry messages, it returns the MessageReference that was set
+// For normal messages, it returns the result of calling Reference()
+func (b *Bot) getProperMessageReference(m *discordgo.MessageCreate) *discordgo.MessageReference {
+	// For synthetic retry messages (identified by timestamp-based IDs),
+	// use the explicit MessageReference that was set during retry creation
+	if b.isSyntheticMessage(m) {
+		if m.MessageReference != nil {
+			// Validate that the referenced message exists before using it
+			if b.validateMessageReference(m.MessageReference) {
+				return m.MessageReference
+			}
+		}
+		// If synthetic message has invalid reference, don't use any reference
+		return nil
+	}
+
+	// For real user messages we *always* want to reply directly to that message
+	// instead of following the user-supplied MessageReference (which usually
+	// points at the bot's previous answer). This prevents the bot from
+	// accidentally replying to its own message and breaking the conversation
+	// thread.
+	return m.Reference()
+}
+
+// isSyntheticMessage checks if a message is a synthetic retry message
+func (b *Bot) isSyntheticMessage(m *discordgo.MessageCreate) bool {
+	// Synthetic messages have timestamp-based IDs (Unix nanoseconds)
+	// Real Discord snowflake IDs are much larger and follow a different pattern
+	// Timestamp IDs are typically 19 digits, while Discord snowflakes are 18-19 digits
+	// but start with specific patterns based on Discord's epoch
+	if len(m.ID) >= 19 {
+		// Check if this looks like a nanosecond timestamp (very large number)
+		// Discord snowflakes for 2025 start around 14-15, but timestamps start around 17
+		if m.ID[0] >= '1' && m.ID[1] >= '7' {
+			return true
+		}
+	}
+	return false
+}
+
+// validateMessageReference checks if a MessageReference points to a valid message
+func (b *Bot) validateMessageReference(ref *discordgo.MessageReference) bool {
+	if ref == nil || ref.MessageID == "" || ref.ChannelID == "" {
+		return false
+	}
+	
+	// Basic format validation - Discord IDs should be numeric and properly sized
+	if len(ref.MessageID) < 10 || len(ref.ChannelID) < 10 {
+		return false
+	}
+	
+	// Try to fetch the message to see if it exists using the session from the bot
+	if b.session != nil {
+		_, err := b.session.ChannelMessage(ref.ChannelID, ref.MessageID)
+		if err != nil {
+			log.Printf("MessageReference validation failed: %v", err)
+			return false
+		}
+	}
+	
+	return true
+}
+
+// handleMessage processes a message and generates LLM response
+func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
+	// Create progress manager
+	progressMgr := utils.NewProgressManager(s, m.ChannelID)
+
+	// Show simple progress message once (as a reply)
+	if err := progressMgr.UpdateProgress(utils.ProgressProcessing, nil, b.getProperMessageReference(m)); err != nil {
+		log.Printf("Failed to update progress: %v", err)
+	}
+
+	// Defer cleanup function to ensure progress message is always handled
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic in handleMessage: %v", r)
+			b.updateProgressWithError(s, progressMgr, fmt.Sprintf("Internal error: %v", r), "unknown")
+		}
+	}()
+
+	// Reload config
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		log.Printf("Failed to reload config: %v", err)
+		b.updateProgressWithError(s, progressMgr, fmt.Sprintf("Failed to reload config: %v", err), "unknown")
+		return
+	}
+
+	b.mu.Lock()
+	b.config = cfg
+	b.mu.Unlock()
+
+	// Get user's preferred model
+	currentModel := b.userPrefs.GetUserModel(m.Author.ID, cfg.GetDefaultModel())
+
+	// Parse provider and model
+	parts := strings.SplitN(currentModel, "/", 2)
+	if len(parts) != 2 {
+		log.Printf("Invalid model format: %s", currentModel)
+		b.updateProgressWithError(s, progressMgr, fmt.Sprintf("Invalid model format: %s", currentModel), currentModel)
+		return
+	}
+
+	modelName := parts[1]
+
+	// Check if model supports images and usernames
+	acceptImages := auth.IsVisionModel(modelName)
+	acceptUsernames := auth.SupportsUsernames(currentModel)
+
+	// Calculate total attachment count (current + parent if applicable)
+	totalAttachments := len(m.Attachments)
+
+	// Check if this is a reply to a message with attachments
+	if m.MessageReference != nil && m.MessageReference.MessageID != "" {
+		parentMsg, err := s.ChannelMessage(m.ChannelID, m.MessageReference.MessageID)
+		if err == nil && len(parentMsg.Attachments) > 0 {
+			totalAttachments += len(parentMsg.Attachments)
+		}
+	}
+
+	// Build conversation chain with timeout protection
+	messages, warnings := b.buildConversationChainWithTimeout(s, m, acceptImages, acceptUsernames, true, progressMgr, 5*time.Minute)
+	if len(messages) == 0 {
+		b.updateProgressWithError(s, progressMgr, "Failed to build conversation chain", currentModel)
+		return
+	}
+
+	// Get user's custom system prompt or fall back to default
+	userSystemPrompt := b.userPrefs.GetUserSystemPrompt(m.Author.ID)
+	systemPrompt := cfg.SystemPrompt
+	if userSystemPrompt != "" {
+		systemPrompt = userSystemPrompt
+	}
+
+	// Add system prompt
+	messages = b.llmClient.AddSystemPrompt(messages, systemPrompt, acceptUsernames)
+
+	// Reverse messages (newest first for API)
+	messages = utils.ReverseMessages(messages)
+
+	log.Printf("Message received (user ID: %s, attachments: %d, conversation length: %d):\n%s",
+		m.Author.ID, totalAttachments, len(messages), m.Content)
+
+	// Get web search information from the original message node
+	node, exists := b.nodeManager.Get(m.ID)
+	var webSearchPerformed bool
+	var searchResultCount int
+	if exists {
+		webSearchPerformed, searchResultCount = node.GetWebSearchInfo()
+	}
+
+	// Generate response with web search information
+	b.generateResponse(s, m, currentModel, messages, warnings, progressMgr, b.getProperMessageReference(m), webSearchPerformed, searchResultCount)
+}
+
+// updateProgressWithError updates the progress message with an error
+func (b *Bot) updateProgressWithError(s *discordgo.Session, progressMgr *utils.ProgressManager, errorMsg string, model string) {
+	if progressMgr != nil && progressMgr.GetMessageID() != "" {
+		errorEmbed := &discordgo.MessageEmbed{
+			Title:       "❌ Processing Failed",
+			Description: fmt.Sprintf("An error occurred while processing your request:\n\n```\n%s\n```", errorMsg),
+			Color:       0xFF0000, // Red color for errors
+		}
+
+		// Add model info to footer if available
+		if model != "" && model != "unknown" {
+			errorEmbed.Footer = &discordgo.MessageEmbedFooter{
+				Text: fmt.Sprintf("🤖 Model: %s", model),
+			}
+		}
+
+		// Update the progress message to show the error
+		if _, err := s.ChannelMessageEditEmbed(progressMgr.GetChannelID(), progressMgr.GetMessageID(), errorEmbed); err != nil {
+			log.Printf("Failed to update progress message with error: %v", err)
+		}
+	}
+}

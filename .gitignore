@@ -1,0 +1,109 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+DiscordAIChatbot
+llmcord
+
+# Any executable files without extension (common on Unix-like systems)
+/DiscordAIChatbot
+/cmd/bot/bot
+/cmd/*/[!.]*
+**/cmd/*/[!.]*
+
+# Go build outputs
+main
+bot
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+vendor/
+
+# Go workspace file
+go.work
+
+# Build directories
+build/
+dist/
+
+# Configuration files with sensitive data
+configs/config.yaml
+config.yaml
+
+# API Keys and sensitive files
+*.apikeys
+.apikeys
+:memory:.apikeys
+
+# Database files (legacy SQLite - no longer used)
+*.db
+*.sqlite
+*.sqlite3
+user_preferences.db*
+
+# Log files
+*.log
+logs/
+log.txt
+errors.txt
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Chart processing virtual environment
+chart_venv/
+
+# Generated documentation
+docs/generated/
+
+# Generated output files
+repomix-output.xml
+*.xml
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Coverage reports
+coverage.txt
+coverage.html
+c.out
+
+# Air live reloading tool
+tmp/
+
+# Delve debugger
+__debug_bin
+
+# Local development scripts
+dev-*
+local-* 
+
+CLAUDE.md
