@@ -1,0 +1,452 @@
+package bot
+
+import (
+	"fmt"
+	"log"
+	"sort"
+	"strings"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+// handleSlashCommand handles slash command execution
+func (b *Bot) handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	switch data.Name {
+	case "model":
+		b.handleModelCommand(s, i)
+	case "systemprompt":
+		b.handleSystemPromptCommand(s, i)
+	case "apikeys":
+		b.handleAPIKeysCommand(s, i)
+	}
+}
+
+// handleModelCommand handles the /model slash command
+func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	// Get user ID
+	var userID string
+	if i.User != nil {
+		userID = i.User.ID
+	} else if i.Member != nil && i.Member.User != nil {
+		userID = i.Member.User.ID
+	}
+
+	// Thread-safe access to config
+	b.mu.RLock()
+	config := b.config
+	b.mu.RUnlock()
+
+	// Check if config is nil (safety check)
+	if config == nil {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Configuration is not available",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	// Get user's current model
+	var currentModel string
+	if userID != "" && b.userPrefs != nil {
+		currentModel = b.userPrefs.GetUserModel(userID, config.GetDefaultModel())
+	} else {
+		currentModel = config.GetDefaultModel()
+	}
+
+	if len(data.Options) == 0 {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("Current model: `%s`", currentModel),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	newModel := data.Options[0].StringValue()
+
+	var response string
+
+	if newModel == currentModel {
+		response = fmt.Sprintf("Current model: `%s`", newModel)
+	} else {
+		// Save user's model preference
+		if userID == "" || b.userPrefs == nil {
+			response = "❌ Unable to save model preference (user ID not available)"
+		} else {
+			err := b.userPrefs.SetUserModel(userID, newModel)
+			if err != nil {
+				log.Printf("Failed to save user model preference: %v", err)
+				response = "❌ Failed to save model preference"
+			} else {
+				response = fmt.Sprintf("Model switched to: `%s`", newModel)
+				log.Printf("User %s switched model to: %s", userID, newModel)
+			}
+		}
+	}
+
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: response,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	}); err != nil {
+		log.Printf("Failed to respond to interaction: %v", err)
+	}
+}
+
+// handleSystemPromptCommand handles the /systemprompt slash command
+func (b *Bot) handleSystemPromptCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	// Get user ID
+	var userID string
+	if i.User != nil {
+		userID = i.User.ID
+	} else if i.Member != nil && i.Member.User != nil {
+		userID = i.Member.User.ID
+	}
+
+	if len(data.Options) == 0 {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Please specify an action (view/set/clear)",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	action := data.Options[0].StringValue()
+	var response string
+
+	switch action {
+	case "view":
+		var currentPrompt string
+		if userID != "" && b.userPrefs != nil {
+			currentPrompt = b.userPrefs.GetUserSystemPrompt(userID)
+		}
+		if currentPrompt == "" {
+			response = "You don't have a custom system prompt set. Using the default system prompt."
+		} else {
+			// Truncate prompt if too long for Discord message
+			displayPrompt := currentPrompt
+			if len(displayPrompt) > 1500 {
+				displayPrompt = displayPrompt[:1500] + "..."
+			}
+			response = fmt.Sprintf("Your current system prompt:\n```\n%s\n```", displayPrompt)
+		}
+
+	case "set":
+		if len(data.Options) < 2 {
+			response = "❌ Please provide a prompt when using 'set'"
+			break
+		}
+
+		newPrompt := data.Options[1].StringValue()
+		if len(newPrompt) > 8000 {
+			response = "❌ System prompt is too long (max 8000 characters)"
+			break
+		}
+
+		if userID == "" || b.userPrefs == nil {
+			response = "❌ Unable to save system prompt (user ID not available)"
+		} else {
+			err := b.userPrefs.SetUserSystemPrompt(userID, newPrompt)
+			if err != nil {
+				log.Printf("Failed to save user system prompt: %v", err)
+				response = "❌ Failed to save system prompt"
+			} else {
+				response = "✅ Your custom system prompt has been set!"
+				log.Printf("User %s set custom system prompt", userID)
+			}
+		}
+
+	case "clear":
+		if userID == "" || b.userPrefs == nil {
+			response = "❌ Unable to clear system prompt (user ID not available)"
+		} else {
+			err := b.userPrefs.ClearUserSystemPrompt(userID)
+			if err != nil {
+				log.Printf("Failed to clear user system prompt: %v", err)
+				response = "❌ Failed to clear system prompt"
+			} else {
+				response = "✅ Your custom system prompt has been cleared. You'll now use the default system prompt."
+				log.Printf("User %s cleared custom system prompt", userID)
+			}
+		}
+
+	default:
+		response = "❌ Invalid action. Use 'view', 'set', or 'clear'"
+	}
+
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: response,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	}); err != nil {
+		log.Printf("Failed to respond to interaction: %v", err)
+	}
+}
+
+// handleAPIKeysCommand handles the /apikeys slash command
+func (b *Bot) handleAPIKeysCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	// Get user ID
+	var userID string
+	if i.User != nil {
+		userID = i.User.ID
+	} else if i.Member != nil && i.Member.User != nil {
+		userID = i.Member.User.ID
+	}
+
+	// Thread-safe access to config
+	b.mu.RLock()
+	config := b.config
+	b.mu.RUnlock()
+
+	// Check if config is nil (safety check)
+	if config == nil {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Configuration is not available",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	// Check if user is admin
+	if userID == "" || !contains(config.Permissions.Users.AdminIDs, userID) {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command is only available to administrators",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	action := "status" // default action
+	if len(data.Options) > 0 {
+		action = data.Options[0].StringValue()
+	}
+
+	var response string
+
+	switch action {
+	case "status":
+		// Get bad key statistics
+		stats, err := b.apiKeyManager.GetBadKeyStats()
+		if err != nil {
+			log.Printf("Failed to get API key stats: %v", err)
+			response = "❌ Failed to get API key statistics"
+			break
+		}
+
+		if len(stats) == 0 {
+			response = "✅ No bad API keys currently recorded"
+		} else {
+			response = "📊 **API Key Status:**\n"
+			for provider, badCount := range stats {
+				var totalKeys int
+				if provider == "serpapi" {
+					totalKeys = len(config.GetSerpAPIKeys())
+				} else {
+					providerConfig := config.Providers[provider]
+					totalKeys = len(providerConfig.GetAPIKeys())
+				}
+				goodKeys := totalKeys - badCount
+				response += fmt.Sprintf("• **%s**: %d good, %d bad (total: %d)\n",
+					provider, goodKeys, badCount, totalKeys)
+			}
+		}
+
+	case "reset":
+		var provider string
+		if len(data.Options) > 1 {
+			provider = data.Options[1].StringValue()
+		}
+
+		if provider == "" {
+			response = "❌ Please specify a provider when using 'reset'"
+			break
+		}
+
+		// Check if provider exists
+		validProvider := false
+		if provider == "serpapi" {
+			validProvider = len(config.GetSerpAPIKeys()) > 0
+		} else {
+			_, validProvider = config.Providers[provider]
+		}
+
+		if !validProvider {
+			response = fmt.Sprintf("❌ Unknown provider: %s", provider)
+			break
+		}
+
+		// Reset bad keys for the provider
+		err := b.apiKeyManager.ResetBadKeys(provider)
+		if err != nil {
+			log.Printf("Failed to reset bad keys for provider %s: %v", provider, err)
+			response = fmt.Sprintf("❌ Failed to reset bad keys for provider: %s", provider)
+		} else {
+			response = fmt.Sprintf("✅ Reset bad API keys for provider: %s", provider)
+			log.Printf("Admin %s reset bad API keys for provider: %s", userID, provider)
+		}
+
+	default:
+		response = "❌ Invalid action. Use 'status' or 'reset'"
+	}
+
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: response,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	}); err != nil {
+		log.Printf("Failed to respond to interaction: %v", err)
+	}
+}
+
+// Helper function to check if slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// handleAutocomplete handles autocomplete for slash commands
+func (b *Bot) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	switch data.Name {
+	case "model":
+		b.handleModelAutocomplete(s, i)
+	}
+}
+
+// handleModelAutocomplete handles autocomplete for the model command
+func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	// Get the partial input
+	var partial string
+	if len(data.Options) > 0 && data.Options[0].Focused {
+		partial = data.Options[0].StringValue()
+	}
+
+	// Thread-safe access to config
+	b.mu.RLock()
+	config := b.config
+	b.mu.RUnlock()
+
+	// Check if config is nil (safety check)
+	if config == nil {
+		log.Printf("Config is nil in handleModelAutocomplete")
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+			Data: &discordgo.InteractionResponseData{
+				Choices: []*discordgo.ApplicationCommandOptionChoice{},
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to autocomplete interaction: %v", err)
+		}
+		return
+	}
+
+	// Get user's current model
+	var userID string
+	if i.User != nil {
+		userID = i.User.ID
+	} else if i.Member != nil && i.Member.User != nil {
+		userID = i.Member.User.ID
+	}
+
+	var currentModel string
+	if userID != "" && b.userPrefs != nil {
+		currentModel = b.userPrefs.GetUserModel(userID, config.GetDefaultModel())
+	} else {
+		currentModel = config.GetDefaultModel()
+	}
+
+	// Get all model names
+	var models []string
+	if config.Models != nil {
+		for modelName := range config.Models {
+			models = append(models, modelName)
+		}
+	}
+
+	// Filter models based on partial input and exclude current model from regular list
+	var filteredModels []string
+	for _, model := range models {
+		if model != currentModel && (partial == "" || strings.Contains(strings.ToLower(model), strings.ToLower(partial))) {
+			filteredModels = append(filteredModels, model)
+		}
+	}
+
+	// Sort and limit to 24 (leaving space for current model)
+	sort.Strings(filteredModels)
+	if len(filteredModels) > 24 {
+		filteredModels = filteredModels[:24]
+	}
+
+	// Create choices - first add non-current models with ○ symbol
+	choices := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(filteredModels)+1)
+	for _, model := range filteredModels {
+		choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+			Name:  fmt.Sprintf("○ %s", model),
+			Value: model,
+		})
+	}
+
+	// Add current model with ◉ symbol if it matches the partial input
+	if partial == "" || strings.Contains(strings.ToLower(currentModel), strings.ToLower(partial)) {
+		currentChoice := &discordgo.ApplicationCommandOptionChoice{
+			Name:  fmt.Sprintf("◉ %s (current)", currentModel),
+			Value: currentModel,
+		}
+		// Add current model to the end (as shown in llmcord)
+		choices = append(choices, currentChoice)
+	}
+
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+		Data: &discordgo.InteractionResponseData{
+			Choices: choices,
+		},
+	}); err != nil {
+		log.Printf("Failed to respond to autocomplete interaction: %v", err)
+	}
+}

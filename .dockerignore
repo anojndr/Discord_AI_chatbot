@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+README.md
+LICENSE.md
+AGENTS.md
+*.md
+
+# Development files
+.env
+.env.local
+.env.example
+env.example
+errors.txt
+
+# Build artifacts
+bin/
+build/
+dist/
+DiscordAIChatbot
+discordbot
+
+# Dependencies
+node_modules/
+chart_venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+*_test.go
+*_test.py
+test/
+tests/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Package files
+package-lock.json
+
+# Output files
+repomix-output.xml
