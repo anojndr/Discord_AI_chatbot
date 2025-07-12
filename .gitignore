@@ -78,10 +78,6 @@ chart_venv/
 # Generated documentation
 docs/generated/
 
-# Generated output files
-repomix-output.xml
-*.xml
-
 # OS generated files
 .DS_Store
 .DS_Store?

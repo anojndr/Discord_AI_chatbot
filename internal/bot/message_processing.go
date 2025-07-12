@@ -43,6 +43,8 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	// Detect explicit Google Lens invocation (query must start with "googlelens ")
 	lc := strings.ToLower(strings.TrimSpace(cleanedContent))
 	isGoogleLensQuery := false
+	isAskChannelQuery := false
+	var channelQuery string
 	if strings.HasPrefix(lc, "googlelens") && isCurrentMessage {
 		isGoogleLensQuery = true
 		// Extract the remainder after the keyword
@@ -105,6 +107,55 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			}
 		} else {
 			cleanedContent = fmt.Sprintf("user query: %s\n\n⚠️ Google Lens requires an image URL or image attachment.", remainder)
+		}
+	}
+	
+	// Detect explicit "askchannel" invocation (query must start with "askchannel ")
+	if !isGoogleLensQuery && isCurrentMessage {
+		isAskChannelQuery, channelQuery = processors.IsAskChannelQuery(cleanedContent)
+		if isAskChannelQuery {
+			log.Printf("Detected askchannel query: %s", channelQuery)
+			
+			// Get user's current model and its token limit
+			b.mu.RLock()
+			cfg := b.config
+			b.mu.RUnlock()
+			
+			userModel := b.userPrefs.GetUserModel(msg.Author.ID, cfg.GetDefaultModel())
+			modelTokenLimit := cfg.GetModelTokenLimit(userModel)
+			tokenThreshold := cfg.GetChannelTokenThreshold()
+			
+			// Fetch channel messages with context (no timeout for channel queries)
+			ctx := context.Background()
+			
+			channelResult, err := b.channelProcessor.FetchChannelMessages(ctx, s, msg.ChannelID, channelQuery, s.State.User.ID, modelTokenLimit, tokenThreshold)
+			if err != nil {
+				log.Printf("Failed to fetch channel messages: %v", err)
+				cleanedContent = fmt.Sprintf("user query: %s\n\n⚠️ Failed to fetch channel messages: %v", channelQuery, err)
+			} else {
+				// Format the channel context with user summary
+				var contextParts []string
+				contextParts = append(contextParts, fmt.Sprintf("user query: %s", channelQuery))
+				
+				// Add user message count summary
+				if len(channelResult.UserMessageCounts) > 0 {
+					contextParts = append(contextParts, fmt.Sprintf("\nmessage count summary (%d total messages):", channelResult.TotalMessages))
+					for username, count := range channelResult.UserMessageCounts {
+						contextParts = append(contextParts, fmt.Sprintf("%s: %d", username, count))
+					}
+				}
+				
+				contextParts = append(contextParts, "\nchannel history context:")
+				
+				for _, channelMsg := range channelResult.Messages {
+					if content, ok := channelMsg.Content.(string); ok {
+						contextParts = append(contextParts, content)
+					}
+				}
+				
+				cleanedContent = strings.Join(contextParts, "\n")
+				log.Printf("Added %d channel messages to context from %d users", len(channelResult.Messages), len(channelResult.UserMessageCounts))
+			}
 		}
 	}
 
@@ -186,7 +237,8 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	contentForURLExtraction = strings.Join(urlTextParts, "\n")
 
 	// Perform URL extraction only on message text and embeds, not file content
-	if contentForURLExtraction != "" {
+	// Skip URL extraction for askchannel queries since they have their own context
+	if contentForURLExtraction != "" && !isAskChannelQuery {
 		messageType := "current"
 		if !isCurrentMessage {
 			messageType = "historical"
@@ -226,6 +278,9 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 				node.SetWebSearchInfo(false, 0)
 			} else if isGoogleLensQuery {
 				log.Printf("Skipping web search decider for Google Lens query")
+				node.SetWebSearchInfo(false, 0)
+			} else if isAskChannelQuery {
+				log.Printf("Skipping web search decider for askchannel query")
 				node.SetWebSearchInfo(false, 0)
 			} else {
 				// Build chat history for context with images preserved per message

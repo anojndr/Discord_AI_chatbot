@@ -36,6 +36,7 @@ type Bot struct {
 	tableRenderer    *utils.TableRenderer
 	fileProcessor    *processors.FileProcessor
 	chartProcessor   *processors.ChartProcessor
+	channelProcessor *processors.ChannelProcessor
 	lastTaskTime     time.Time
 	mu               sync.RWMutex
 	healthServer     *http.Server
@@ -76,6 +77,7 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 		tableRenderer:    createTableRenderer(cfg),
 		fileProcessor:    processors.NewFileProcessor(),
 		chartProcessor:   processors.NewChartProcessor(cfg.DatabaseURL),
+		channelProcessor: processors.NewChannelProcessor(),
 		messageCache:     storage.NewMessageNodeCache(cfg.DatabaseURL),
 		shutdownCtx:      shutdownCtx,
 		shutdownCancel:   shutdownCancel,

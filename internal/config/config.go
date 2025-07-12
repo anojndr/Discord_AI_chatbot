@@ -82,6 +82,13 @@ type Config struct {
 		SummarizerModel string `yaml:"summarizer_model"`
 	} `yaml:"context"`
 
+	// Channel query settings
+	Channel struct {
+		// Token threshold ratio (0.0-1.0) for channel message fetching
+		// Default: 0.7 (70% of model's token limit)
+		TokenThreshold float64 `yaml:"token_threshold"`
+	} `yaml:"channel"`
+
 	// Table rendering settings
 	TableRendering struct {
 		// Method for table rendering: "gg" or "rod"
@@ -144,6 +151,37 @@ func (c *Config) GetRodQuality() int {
 		return c.TableRendering.Rod.Quality
 	}
 	return DefaultRodQuality
+}
+
+// GetChannelTokenThreshold returns the token threshold for channel queries
+// Falls back to 0.7 (70%) if not specified
+func (c *Config) GetChannelTokenThreshold() float64 {
+	if c.Channel.TokenThreshold > 0 && c.Channel.TokenThreshold <= 1.0 {
+		return c.Channel.TokenThreshold
+	}
+	return 0.7 // Default to 70%
+}
+
+// GetModelTokenLimit returns the token limit for a specific model
+// Falls back to DefaultTokenLimit if not specified
+func (c *Config) GetModelTokenLimit(modelName string) int {
+	// Default token limit
+	const DefaultTokenLimit = 128000
+	
+	if c.Models == nil {
+		return DefaultTokenLimit
+	}
+	
+	modelParams, exists := c.Models[modelName]
+	if !exists {
+		return DefaultTokenLimit
+	}
+	
+	if modelParams.TokenLimit != nil && *modelParams.TokenLimit > 0 {
+		return *modelParams.TokenLimit
+	}
+	
+	return DefaultTokenLimit
 }
 
 // ModelParams represents model-specific parameters

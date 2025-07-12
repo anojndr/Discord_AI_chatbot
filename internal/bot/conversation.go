@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -13,31 +12,6 @@ import (
 )
 
 
-// buildConversationChainWithTimeout wraps buildConversationChainWithWebSearch with timeout protection
-func (b *Bot) buildConversationChainWithTimeout(s *discordgo.Session, m *discordgo.MessageCreate, acceptImages, acceptUsernames, enableWebSearch bool, progressMgr *utils.ProgressManager, timeout time.Duration) ([]messaging.OpenAIMessage, []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	type result struct {
-		messages []messaging.OpenAIMessage
-		warnings []string
-	}
-
-	resultChan := make(chan result, 1)
-
-	go func() {
-		messages, warnings := b.buildConversationChainWithWebSearch(s, m, acceptImages, acceptUsernames, enableWebSearch, progressMgr)
-		resultChan <- result{messages, warnings}
-	}()
-
-	select {
-	case res := <-resultChan:
-		return res.messages, res.warnings
-	case <-ctx.Done():
-		log.Printf("buildConversationChain timed out after %v", timeout)
-		return nil, []string{"⚠️ Message processing timed out"}
-	}
-}
 
 // buildConversationChainWithWebSearch builds the conversation chain from message history with optional web search analysis
 func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *discordgo.MessageCreate, acceptImages, acceptUsernames, enableWebSearch bool, progressMgr *utils.ProgressManager) ([]messaging.OpenAIMessage, []string) {

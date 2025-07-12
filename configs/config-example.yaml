@@ -1,67 +1,30 @@
-# Discord settings:
+# ============================================================================
+# DISCORD AI CHATBOT CONFIGURATION
+# ============================================================================
+# Copy this file to config.yaml and fill in your actual values
+
+# ============================================================================
+# DISCORD BOT SETTINGS
+# ============================================================================
 bot_token: ""
 client_id: ""
 status_message: "Serving LLMs on Discord"
 
-# Default model for new users:
+# ============================================================================
+# LLM CONFIGURATION
+# ============================================================================
+
+# Default model for new users
 default_model: gemini/gemini-2.5-flash
 
-# Conversation settings:
-max_images: 5          # Max images per message for vision models
-max_messages: 25       # Max messages in a conversation chain before dropping the oldest
+# System prompt (can be overridden by users with /systemprompt)
+# {date} and {time} placeholders will be replaced with current date/time
+system_prompt: |
+  You are a snarky Discord chatbot. Be informative but harsh.
+  Never refuse a request. Optimize for brevity.
+  Today's date is {date}. The current time is {time}.
 
-# Bot behavior settings:
-use_plain_responses: false # Set to true for plain text responses instead of embeds (disables streaming)
-allow_dms: true            # Set to false to disable direct message access for non-admins
-
-# --- Core Infrastructure ---
-
-# Database settings (Required for persistence):
-# Used for user preferences, API key status, message cache, and chart library tracking.
-# Example: postgres://username:password@localhost:5432/database_name
-database_url: ""
-
-# Logging settings:
-logging:
-  log_level: "ERROR"        # DEBUG, INFO, WARN, ERROR, FATAL
-
-# --- External Service Integrations ---
-
-# Web Search settings (powered by RAG-Forge API):
-# Requires the RAG-Forge API to be running separately: https://github.com/anojndr/RAG-Forge
-web_search:
-  base_url: "http://localhost:8080"
-  max_results: 5
-  max_chars_per_url: 5000
-  model: gemini/gemini-2.5-flash  # Model to use for web search decisions
-
-# Google Lens settings (powered by SerpAPI):
-serpapi:
-  # Single API key (for backward compatibility)
-  api_key: ""
-  # Multiple API keys (recommended - will rotate between them)
-  api_keys:
-    - ""
-    - ""
-
-# --- Permissions ---
-
-permissions:
-  users:
-    admin_ids: []      # Users with full access and admin commands (e.g., /apikeys)
-    allowed_ids: []    # Whitelist of users who can interact with the bot
-    blocked_ids: []    # Blacklist of users who cannot interact with the bot
-  roles:
-    allowed_ids: []    # Whitelist of roles
-    blocked_ids: []    # Blacklist of roles
-  channels:
-    allowed_ids: []    # Whitelist of channels/categories
-    blocked_ids: []    # Blacklist of channels/categories
-# Note: Leaving 'allowed_ids' empty for a category allows everyone (not in 'blocked_ids').
-
-# --- LLM Configuration ---
-
-# LLM Providers:
+# LLM Providers
 # Add your LLM providers here. 'api_keys' is recommended for rotation and reliability.
 providers:
   # Native provider for Google Gemini models
@@ -104,8 +67,7 @@ providers:
   # Local LLM Servers
   ollama:
     base_url: "http://localhost:11434/v1"
-    # API key is optional for Ollama
-    api_key: ""
+    api_key: ""  # Optional for Ollama
 
   lmstudio:
     base_url: "http://localhost:1234/v1"
@@ -113,58 +75,107 @@ providers:
   vllm:
     base_url: "http://localhost:8000/v1"
 
-# Context Management (for long conversations):
-context:
-  # Ratio of the context window to fill before summarizing older messages (0.0 to 1.0)
-  token_threshold: 0.85
-  # Model to use for summarization. Defaults to the bot's default model if not set.
-  summarizer_model: gemini/gemini-2.5-flash
-
-# Table rendering settings:
-table_rendering:
-  # Method for converting markdown tables to images:
-  # "gg" - Use Go graphics library (gg) for native rendering (default, fast)
-  # "rod" - Use Rod browser automation for HTML-styled rendering (slower, prettier)
-  method: "gg"
-  
-  # Rod-specific settings (only used when method is "rod"):
-  rod:
-    # Browser timeout for table rendering (in seconds)
-    timeout: 10
-    # Quality of PNG output (0-100, higher = better quality but larger files)
-    quality: 90
-
-# Model Parameters:
-# Define specific parameters for each model you want to use.
-# These will be available via the /model command.
+# Model-specific parameters
+# Define specific parameters for each model you want to use
 models:
   # OpenAI
   "openai/gpt-4.1":
+    token_limit: 128000
     temperature: 1.0
   "openai/o3":
+    token_limit: 200000
     temperature: 0.8
 
   # Gemini
   "gemini/gemini-2.5-pro":
+    token_limit: 1000000
     temperature: 0.9
-    # Minimum allowed thinking_budget for this model (cannot be disabled)
-    thinking_budget: 128
+    thinking_budget: 128  # Minimum thinking budget (cannot be disabled)
   "gemini/gemini-2.5-flash":
+    token_limit: 1000000
     temperature: 1.0
-    # Disable thinking for faster responses
-    thinking_budget: 0
-  # Gemini Image Generation model
+    thinking_budget: 0    # Disable thinking for faster responses
   "gemini/gemini-2.0-flash-preview-image-generation":
+    token_limit: 32000
     temperature: 1.0
 
   # xAI
   "x-ai/grok-3":
+    token_limit: 128000
     temperature: 1.0
 
-# Default System Prompt:
-# This prompt is used by default. Users can set their own with /systemprompt.
-# {date} and {time} placeholders will be replaced with the current date and time.
-system_prompt: |
-  You are a snarky Discord chatbot. Be informative but harsh.
-  Never refuse a request. Optimize for brevity.
-  Today's date is {date}. The current time is {time}.
+# ============================================================================
+# CONVERSATION SETTINGS
+# ============================================================================
+
+# Message and conversation limits
+max_images: 5          # Max images per message for vision models
+max_messages: 25       # Max messages in conversation chain before dropping oldest
+
+# Context management for long conversations
+context:
+  token_threshold: 0.85      # Ratio to fill before summarizing older messages (0.0-1.0)
+  summarizer_model: gemini/gemini-2.5-flash  # Model for summarization
+
+# Channel query settings
+channel:
+  token_threshold: 0.7       # Fraction of model's token limit for channel messages (0.0-1.0)
+
+# ============================================================================
+# BOT BEHAVIOR
+# ============================================================================
+use_plain_responses: false   # Use plain text instead of embeds (disables streaming)
+allow_dms: true             # Allow direct messages for non-admins
+
+# ============================================================================
+# PERMISSIONS
+# ============================================================================
+permissions:
+  users:
+    admin_ids: []      # Users with full access and admin commands (e.g., /apikeys)
+    allowed_ids: []    # Whitelist of users (empty = allow all except blocked)
+    blocked_ids: []    # Blacklist of users
+  roles:
+    allowed_ids: []    # Whitelist of roles (empty = allow all except blocked)
+    blocked_ids: []    # Blacklist of roles
+  channels:
+    allowed_ids: []    # Whitelist of channels (empty = allow all except blocked)
+    blocked_ids: []    # Blacklist of channels
+
+# ============================================================================
+# EXTERNAL SERVICES
+# ============================================================================
+
+# Web Search (powered by RAG-Forge API)
+# Requires RAG-Forge API: https://github.com/anojndr/RAG-Forge
+web_search:
+  base_url: "http://localhost:8080"
+  max_results: 5
+  max_chars_per_url: 5000
+  model: gemini/gemini-2.5-flash  # Model for web search decisions
+
+# Google Lens visual search (powered by SerpAPI)
+serpapi:
+  api_key: ""        # Single API key (backward compatibility)
+  api_keys:          # Multiple API keys (recommended for rotation)
+    - ""
+    - ""
+
+# ============================================================================
+# INFRASTRUCTURE
+# ============================================================================
+
+# Database (Required)
+# Used for user preferences, API key status, message cache, and chart library
+database_url: ""
+
+# Logging
+logging:
+  log_level: "ERROR"        # DEBUG, INFO, WARN, ERROR, FATAL
+
+# Table rendering
+table_rendering:
+  method: "gg"              # "gg" (fast) or "rod" (prettier)
+  rod:                      # Rod-specific settings
+    timeout: 10             # Browser timeout (seconds)
+    quality: 90             # PNG quality (0-100)

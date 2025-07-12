@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -305,12 +304,8 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
-	// Build conversation chain with timeout protection
-	messages, warnings := b.buildConversationChainWithTimeout(s, m, acceptImages, acceptUsernames, true, progressMgr, 5*time.Minute)
-	if len(messages) == 0 {
-		b.updateProgressWithError(s, progressMgr, "Failed to build conversation chain", currentModel)
-		return
-	}
+	// Build conversation chain
+	messages, warnings := b.buildConversationChainWithWebSearch(s, m, acceptImages, acceptUsernames, true, progressMgr)
 
 	// Get user's custom system prompt or fall back to default
 	userSystemPrompt := b.userPrefs.GetUserSystemPrompt(m.Author.ID)
