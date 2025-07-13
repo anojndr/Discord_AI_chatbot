@@ -26,6 +26,9 @@ type LLMClient struct {
 	geminiProvider *providers.GeminiProvider
 }
 
+// Client is an alias for LLMClient for convenience
+type Client = LLMClient
+
 // NewLLMClient creates a new LLM client
 func NewLLMClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager) *LLMClient {
 	logging.LogToFile("Initializing LLM client")
@@ -381,6 +384,39 @@ func (c *LLMClient) StreamChatCompletion(ctx context.Context, model string, mess
 	}()
 
 	return responseChan, nil
+}
+
+// GetChatCompletion gets a complete chat completion response (non-streaming)
+// This is useful for summarization and other tasks that need the full response
+func (c *LLMClient) GetChatCompletion(ctx context.Context, messages []messaging.OpenAIMessage, model string) (string, error) {
+	// Use streaming and collect all chunks
+	stream, err := c.StreamChatCompletion(ctx, model, messages)
+	if err != nil {
+		return "", fmt.Errorf("failed to create stream: %w", err)
+	}
+
+	var fullResponse strings.Builder
+	for chunk := range stream {
+		if chunk.Error != nil {
+			return "", fmt.Errorf("stream error: %w", chunk.Error)
+		}
+		
+		if chunk.Content != "" {
+			fullResponse.WriteString(chunk.Content)
+		}
+		
+		// Check for completion
+		if chunk.FinishReason != "" {
+			break
+		}
+	}
+
+	result := strings.TrimSpace(fullResponse.String())
+	if result == "" {
+		return "", fmt.Errorf("received empty response from LLM")
+	}
+
+	return result, nil
 }
 
 // BuildMessages creates OpenAI messages from conversation chain

@@ -112,15 +112,19 @@ models:
 max_images: 5          # Max images per message for vision models
 max_messages: 25       # Max messages in conversation chain before dropping oldest
 
-# Context management for long conversations
-context:
-  token_threshold: 0.85      # Ratio to fill before summarizing older messages (0.0-1.0)
-  summarizer_model: gemini/gemini-2.5-flash  # Model for summarization
 
 # Channel query settings
 channel:
   token_threshold: 0.7       # Fraction of model's token limit for channel messages (0.0-1.0)
 
+# Context summarization settings
+# Automatically summarizes old conversation pairs when approaching token limits
+context_summarization:
+  enabled: true                      # Enable automatic context summarization
+  trigger_threshold: 0.8             # Trigger summarization at 80% of token limit (0.0-1.0)
+  model: "gemini/gemini-2.5-flash"   # Model for summarization (fast and cheap recommended)
+  max_pairs_per_batch: 1             # Max conversation pairs to summarize per batch
+  min_unsummarized_pairs: 0          # Min pairs to keep unsummarized (0 = can summarize all)
 
 # ============================================================================
 # BOT BEHAVIOR

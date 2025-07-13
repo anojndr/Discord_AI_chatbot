@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"DiscordAIChatbot/internal/auth"
 	"DiscordAIChatbot/internal/config"
+	contextmgr "DiscordAIChatbot/internal/context"
 	"DiscordAIChatbot/internal/utils"
 )
 
@@ -316,6 +318,31 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// Add system prompt
 	messages = b.llmClient.AddSystemPrompt(messages, systemPrompt, acceptUsernames)
+
+	// Apply context management before sending to LLM
+	ctx := context.Background()
+	contextManager := contextmgr.NewContextManager(b.llmClient, cfg)
+	
+	managedResult, err := contextManager.ManageContext(ctx, messages, currentModel)
+	if err != nil {
+		log.Printf("Context management failed: %v", err)
+		b.updateProgressWithError(s, progressMgr, fmt.Sprintf("Context management error: %v", err), currentModel)
+		return
+	}
+	
+	// Use managed messages
+	messages = managedResult.Messages
+	
+	// Add context management information to warnings if needed
+	if managedResult.WasSummarized {
+		warnings = append(warnings, fmt.Sprintf("📝 Summarized %d conversation pairs to fit within token limit", managedResult.SummariesCount))
+	}
+	if managedResult.WasTruncated {
+		warnings = append(warnings, "✂️ Latest message truncated to fit within token limit")
+	}
+	
+	log.Printf("Context management: %d tokens used, summarized: %v, truncated: %v", 
+		managedResult.TokensUsed, managedResult.WasSummarized, managedResult.WasTruncated)
 
 	// Reverse messages (newest first for API)
 	messages = utils.ReverseMessages(messages)

@@ -51,4 +51,11 @@ const (
 	DefaultTableRenderingMethod   = "gg"  // Use gg graphics by default
 	DefaultRodTimeout             = 10    // seconds
 	DefaultRodQuality             = 90    // PNG quality (0-100)
+
+	// Context summarization defaults
+	DefaultContextSummarizationEnabled           = true
+	DefaultContextSummarizationTriggerThreshold  = 0.8                     // 80% of token limit
+	DefaultContextSummarizationModel             = "gemini/gemini-2.5-flash"
+	DefaultContextSummarizationMaxPairsPerBatch  = 1
+	DefaultContextSummarizationMinUnsummarizedPairs = 0
 )

@@ -74,13 +74,6 @@ type Config struct {
 	Models       map[string]ModelParams `yaml:"models"`
 	SystemPrompt string                 `yaml:"system_prompt"`
 
-	// Context management settings
-	Context struct {
-		// Threshold ratio (0.0-1.0) at which summarization kicks in
-		TokenThreshold float64 `yaml:"token_threshold"`
-		// Model to use for summarization windows; defaults to Config default model when empty
-		SummarizerModel string `yaml:"summarizer_model"`
-	} `yaml:"context"`
 
 	// Channel query settings
 	Channel struct {
@@ -88,6 +81,24 @@ type Config struct {
 		// Default: 0.7 (70% of model's token limit)
 		TokenThreshold float64 `yaml:"token_threshold"`
 	} `yaml:"channel"`
+
+	// Context summarization settings
+	ContextSummarization struct {
+		// Enable context summarization when approaching token limit
+		Enabled bool `yaml:"enabled"`
+		// Token threshold ratio (0.0-1.0) to trigger summarization
+		// Default: 0.8 (80% of model's token limit)
+		TriggerThreshold float64 `yaml:"trigger_threshold"`
+		// Model to use for summarization (should be fast and cheap)
+		// Default: "gemini/gemini-2.5-flash"
+		Model string `yaml:"model"`
+		// Maximum number of conversation pairs to summarize in one batch
+		// Default: 1 (summarize one pair at a time)
+		MaxPairsPerBatch int `yaml:"max_pairs_per_batch"`
+		// Minimum number of conversation pairs to keep unsummarized
+		// Default: 0 (can summarize all pairs)
+		MinUnsummarizedPairs int `yaml:"min_unsummarized_pairs"`
+	} `yaml:"context_summarization"`
 
 
 	// Table rendering settings
@@ -161,6 +172,47 @@ func (c *Config) GetChannelTokenThreshold() float64 {
 		return c.Channel.TokenThreshold
 	}
 	return 0.7 // Default to 70%
+}
+
+// GetContextSummarizationEnabled returns whether context summarization is enabled
+func (c *Config) GetContextSummarizationEnabled() bool {
+	return c.ContextSummarization.Enabled
+}
+
+// GetContextSummarizationTriggerThreshold returns the token threshold to trigger summarization
+// Falls back to DefaultContextSummarizationTriggerThreshold if not specified
+func (c *Config) GetContextSummarizationTriggerThreshold() float64 {
+	if c.ContextSummarization.TriggerThreshold > 0 && c.ContextSummarization.TriggerThreshold <= 1.0 {
+		return c.ContextSummarization.TriggerThreshold
+	}
+	return DefaultContextSummarizationTriggerThreshold
+}
+
+// GetContextSummarizationModel returns the model to use for summarization
+// Falls back to DefaultContextSummarizationModel if not specified
+func (c *Config) GetContextSummarizationModel() string {
+	if c.ContextSummarization.Model != "" {
+		return c.ContextSummarization.Model
+	}
+	return DefaultContextSummarizationModel
+}
+
+// GetContextSummarizationMaxPairsPerBatch returns the maximum pairs to summarize per batch
+// Falls back to DefaultContextSummarizationMaxPairsPerBatch if not specified
+func (c *Config) GetContextSummarizationMaxPairsPerBatch() int {
+	if c.ContextSummarization.MaxPairsPerBatch > 0 {
+		return c.ContextSummarization.MaxPairsPerBatch
+	}
+	return DefaultContextSummarizationMaxPairsPerBatch
+}
+
+// GetContextSummarizationMinUnsummarizedPairs returns the minimum pairs to keep unsummarized
+// Falls back to DefaultContextSummarizationMinUnsummarizedPairs if not specified
+func (c *Config) GetContextSummarizationMinUnsummarizedPairs() int {
+	if c.ContextSummarization.MinUnsummarizedPairs >= 0 {
+		return c.ContextSummarization.MinUnsummarizedPairs
+	}
+	return DefaultContextSummarizationMinUnsummarizedPairs
 }
 
 // GetModelTokenLimit returns the token limit for a specific model
@@ -267,14 +319,6 @@ func parseConfig(data []byte) (*Config, error) {
 		config.Logging.LogLevel = DefaultLogLevel
 	}
 
-	// Set context defaults
-	if config.Context.TokenThreshold == 0 {
-		config.Context.TokenThreshold = 0.9
-	}
-	// If no summarizer model specified, use the default model
-    if config.Context.SummarizerModel == "" {
-        config.Context.SummarizerModel = config.GetDefaultModel()
-    }
 
 	// Set table rendering defaults
 	if config.TableRendering.Method == "" {
@@ -285,6 +329,23 @@ func parseConfig(data []byte) (*Config, error) {
 	}
 	if config.TableRendering.Rod.Quality == 0 {
 		config.TableRendering.Rod.Quality = DefaultRodQuality
+	}
+
+	// Set context summarization defaults
+	if !config.ContextSummarization.Enabled {
+		config.ContextSummarization.Enabled = DefaultContextSummarizationEnabled
+	}
+	if config.ContextSummarization.TriggerThreshold == 0 {
+		config.ContextSummarization.TriggerThreshold = DefaultContextSummarizationTriggerThreshold
+	}
+	if config.ContextSummarization.Model == "" {
+		config.ContextSummarization.Model = DefaultContextSummarizationModel
+	}
+	if config.ContextSummarization.MaxPairsPerBatch == 0 {
+		config.ContextSummarization.MaxPairsPerBatch = DefaultContextSummarizationMaxPairsPerBatch
+	}
+	if config.ContextSummarization.MinUnsummarizedPairs == 0 {
+		config.ContextSummarization.MinUnsummarizedPairs = DefaultContextSummarizationMinUnsummarizedPairs
 	}
 
 

@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"context"
 	"fmt"
 	"log"
 
@@ -167,49 +166,6 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 	// Reverse back to have newest first (as expected by rest of the code)
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
-	}
-
-	// Sliding window with summarization to stay within token limit
-	const summaryWindowSize = 5 // take 3-5 oldest messages
-	// Determine token limit. If model has specific limit in config use it
-	modelTokenLimit := utils.DefaultTokenLimit
-	if params, ok := config.Models[config.GetDefaultModel()]; ok && params.TokenLimit != nil {
-		modelTokenLimit = *params.TokenLimit
-	}
-	tokenLimit := modelTokenLimit
-	// Use threshold from config; fall back to 0.9 if somehow zero
-	thresholdRatio := config.Context.TokenThreshold
-	if thresholdRatio <= 0 || thresholdRatio >= 1 {
-		thresholdRatio = 0.9
-	}
-
-	currentTokens := utils.EstimateTokenCount(messages)
-
-	for currentTokens > int(float64(tokenLimit)*thresholdRatio) && len(messages) > summaryWindowSize {
-		// pick oldest window (at end of slice because newest first order) 
-		start := len(messages) - summaryWindowSize
-		if start < 0 {
-			start = 0
-		}
-		window := make([]messaging.OpenAIMessage, len(messages[start:]))
-		copy(window, messages[start:])
-
-		// summarize
-		summary, err := b.summarizeMessages(context.Background(), window)
-		if err != nil {
-			log.Printf("Failed to summarize messages: %v", err)
-			break // don't drop context if summarization fails
-		}
-
-		// Replace window with single system message
-		summaryMsg := messaging.OpenAIMessage{
-			Role:    "system",
-			Content: "Summary of earlier conversation: " + summary,
-		}
-		messages = append(messages[:start], summaryMsg)
-
-		// Recompute token count
-		currentTokens = utils.EstimateTokenCount(messages)
 	}
 
 	// Token usage will be shown in embed footer, no need to add as warning

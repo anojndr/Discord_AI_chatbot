@@ -95,17 +95,6 @@ The bot includes a native provider for Google's Gemini models, enabling access t
 
 ---
 
-### Automatic Conversation Summarization
-To manage long conversations and stay within model context limits, the bot automatically summarizes older parts of the conversation.
-
-**Features:**
-- **Token-Aware**: Monitors conversation length and triggers summarization when a configurable token threshold is reached.
-- **Seamless Context**: The summary is injected back into the conversation history as a system message, preserving context for the LLM.
-- **Configurable**: Set the `token_threshold` and `summarizer_model` in your `config.yaml` to control this behavior.
-- **Prevents Errors**: Avoids "context window exceeded" errors from the LLM API.
-
----
-
 ### Persistent Message Caching
 To maximize performance and minimize redundant processing, the bot caches processed message data in the PostgreSQL database.
 
@@ -162,6 +151,9 @@ Every bot response includes helpful action buttons for better interaction:
 
 **🔗 View Output Better:**
 - Creates a shareable link to text.is with improved formatting for long responses and code.
+
+**🔄 Retry with/without Web Search:**
+- Quickly re-run a query with the opposite web search setting to refine results.
 
 ---
 
@@ -223,7 +215,7 @@ Robust API key rotation and error handling for maximum uptime:
 
 **Supported for all providers:**
 - OpenAI, Gemini, xAI, Mistral, Groq, OpenRouter APIs
-- SerpAPI (for web search)
+- SerpAPI (for Google Lens)
 
 ---
 
@@ -288,15 +280,14 @@ Robust API key rotation and error handling for maximum uptime:
 | **use_plain_responses** | Set to `true` for plaintext responses instead of embeds. Disables streaming. (Default: `false`) |
 | **allow_dms** | Set to `false` to disable direct message access. (Default: `true`) |
 | **database_url** | **Required**. PostgreSQL connection string. Format: `postgres://user:pass@host:port/db_name` |
-| **logging** | Configure file-based logging, rotation, and log levels. |
+| **logging** | Configure logging levels. |
 | **web_search** | Configure intelligent web search. **Requires the [RAG-Forge API](https://github.com/anojndr/RAG-Forge) to be running separately.** |
 | **serpapi** | Configure SerpAPI for Google Lens. Supports single or multiple `api_keys`. |
 | **permissions** | Configure access for `users`, `roles`, and `channels`. `admin_ids` gives users special privileges. Leave `allowed_ids` empty to allow all in a category. |
 | **providers** | Add LLM providers with a `base_url` and one or more `api_keys` for rotation. |
 | **models** | Define models in `<provider>/<model>` format. The first model is the default. |
-| **context.token_threshold** | The ratio (0.0-1.0) of the context window to fill before conversation summarization is triggered. (Default: `0.85`) |
-| **context.summarizer_model** | The model to use for summarizing long conversations. Defaults to the bot's default model if not set. |
 | **system_prompt** | The default system prompt. Users can override with `/systemprompt`. Supports `{date}` and `{time}` tags. |
+| **table_rendering** | Configure how markdown tables are rendered: `gg` (native Go, fast) or `rod` (browser, prettier). |
 
 ### API Key Rotation Setup:
 
@@ -374,7 +365,6 @@ This is a complete Go rewrite of the Python llmcord bot from https://github.com/
 - **Lower Memory Usage**: Efficient memory management.
 - **Enhanced Concurrency**: Go's goroutines for better handling of multiple conversations.
 - **Native Gemini Support**: Direct integration with Gemini models, including image generation.
-- **Automatic Conversation Summarization**: Manages long conversations to stay within context limits.
 - **Persistent Message Caching**: Caches processed message data in PostgreSQL to avoid redundant work.
 - **Advanced API Management**: Multiple API key support with automatic rotation and database tracking.
 - **Smart Table & Chart Rendering**: Converts markdown tables and Python chart code to images.
