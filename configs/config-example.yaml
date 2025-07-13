@@ -121,6 +121,10 @@ context:
 channel:
   token_threshold: 0.7       # Fraction of model's token limit for channel messages (0.0-1.0)
 
+# Token counting settings
+tokens:
+  chars_per_token: 4         # Character to token ratio for estimation (default: 4)
+
 # ============================================================================
 # BOT BEHAVIOR
 # ============================================================================

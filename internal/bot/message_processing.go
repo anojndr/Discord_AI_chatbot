@@ -128,7 +128,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			// Fetch channel messages with context (no timeout for channel queries)
 			ctx := context.Background()
 			
-			channelResult, err := b.channelProcessor.FetchChannelMessages(ctx, s, msg.ChannelID, channelQuery, s.State.User.ID, modelTokenLimit, tokenThreshold)
+			channelResult, err := b.channelProcessor.FetchChannelMessages(ctx, s, msg.ChannelID, channelQuery, s.State.User.ID, modelTokenLimit, tokenThreshold, cfg)
 			if err != nil {
 				log.Printf("Failed to fetch channel messages: %v", err)
 				cleanedContent = fmt.Sprintf("user query: %s\n\n⚠️ Failed to fetch channel messages: %v", channelQuery, err)

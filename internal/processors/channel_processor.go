@@ -8,6 +8,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"DiscordAIChatbot/internal/config"
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/utils"
 )
@@ -31,12 +32,12 @@ type ChannelResult struct {
 // FetchChannelMessages fetches messages from a Discord channel, respecting token limits
 // It fetches from newest to oldest, excluding bot messages, and ensures the total
 // (user query + channel messages) fits within the specified threshold of the provided token limit
-func (cp *ChannelProcessor) FetchChannelMessages(ctx context.Context, session *discordgo.Session, channelID string, userQuery string, botUserID string, modelTokenLimit int, tokenThreshold float64) (*ChannelResult, error) {
+func (cp *ChannelProcessor) FetchChannelMessages(ctx context.Context, session *discordgo.Session, channelID string, userQuery string, botUserID string, modelTokenLimit int, tokenThreshold float64, cfg *config.Config) (*ChannelResult, error) {
 	// Calculate threshold percentage of the model's token limit
 	maxTokens := int(float64(modelTokenLimit) * tokenThreshold)
 	
 	// Estimate tokens for user query
-	userQueryTokens := len(userQuery) / 4 // charsPerToken constant from utils
+	userQueryTokens := len(userQuery) / cfg.GetCharsPerToken()
 	if userQueryTokens >= maxTokens {
 		return nil, fmt.Errorf("user query is too long (%d tokens), exceeds %.0f%% of token limit (%d tokens)", userQueryTokens, tokenThreshold*100, maxTokens)
 	}
@@ -88,7 +89,7 @@ func (cp *ChannelProcessor) FetchChannelMessages(ctx context.Context, session *d
 			openAIMsg := cp.convertToOpenAIMessage(msg)
 			
 			// Estimate tokens for this message
-			msgTokens := utils.EstimateTokenCount([]messaging.OpenAIMessage{openAIMsg})
+			msgTokens := utils.EstimateTokenCount([]messaging.OpenAIMessage{openAIMsg}, cfg)
 			
 			// Check if adding this message would exceed our token limit
 			if totalTokens+msgTokens > availableTokens {

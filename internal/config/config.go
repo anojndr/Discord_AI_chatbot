@@ -89,6 +89,13 @@ type Config struct {
 		TokenThreshold float64 `yaml:"token_threshold"`
 	} `yaml:"channel"`
 
+	// Token counting settings
+	Tokens struct {
+		// Character to token ratio for estimation
+		// Default: 4 (common heuristic for English text)
+		CharsPerToken int `yaml:"chars_per_token"`
+	} `yaml:"tokens"`
+
 	// Table rendering settings
 	TableRendering struct {
 		// Method for table rendering: "gg" or "rod"
@@ -286,6 +293,11 @@ func parseConfig(data []byte) (*Config, error) {
 		config.TableRendering.Rod.Quality = DefaultRodQuality
 	}
 
+	// Set token counting defaults
+	if config.Tokens.CharsPerToken == 0 {
+		config.Tokens.CharsPerToken = 4 // Default 4 chars per token
+	}
+
 	return &config, nil
 }
 
@@ -309,5 +321,14 @@ func (c *Config) GetDefaultModel() string {
 
 	// Fallback to the first available model from config
 	return c.GetFirstModel()
+}
+
+// GetCharsPerToken returns the configured character to token ratio
+// Falls back to 4 if not specified
+func (c *Config) GetCharsPerToken() int {
+	if c.Tokens.CharsPerToken > 0 {
+		return c.Tokens.CharsPerToken
+	}
+	return 4 // Default value
 }
 
