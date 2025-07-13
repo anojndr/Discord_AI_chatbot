@@ -37,7 +37,7 @@ func (cp *ChannelProcessor) FetchChannelMessages(ctx context.Context, session *d
 	maxTokens := int(float64(modelTokenLimit) * tokenThreshold)
 	
 	// Estimate tokens for user query
-	userQueryTokens := len(userQuery) / cfg.GetCharsPerToken()
+	userQueryTokens := utils.EstimateTokenCountFromText(userQuery)
 	if userQueryTokens >= maxTokens {
 		return nil, fmt.Errorf("user query is too long (%d tokens), exceeds %.0f%% of token limit (%d tokens)", userQueryTokens, tokenThreshold*100, maxTokens)
 	}
@@ -89,7 +89,7 @@ func (cp *ChannelProcessor) FetchChannelMessages(ctx context.Context, session *d
 			openAIMsg := cp.convertToOpenAIMessage(msg)
 			
 			// Estimate tokens for this message
-			msgTokens := utils.EstimateTokenCount([]messaging.OpenAIMessage{openAIMsg}, cfg)
+			msgTokens := utils.EstimateTokenCount([]messaging.OpenAIMessage{openAIMsg})
 			
 			// Check if adding this message would exceed our token limit
 			if totalTokens+msgTokens > availableTokens {

@@ -183,7 +183,7 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 		thresholdRatio = 0.9
 	}
 
-	currentTokens := utils.EstimateTokenCount(messages, config)
+	currentTokens := utils.EstimateTokenCount(messages)
 
 	for currentTokens > int(float64(tokenLimit)*thresholdRatio) && len(messages) > summaryWindowSize {
 		// pick oldest window (at end of slice because newest first order) 
@@ -209,7 +209,7 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 		messages = append(messages[:start], summaryMsg)
 
 		// Recompute token count
-		currentTokens = utils.EstimateTokenCount(messages, config)
+		currentTokens = utils.EstimateTokenCount(messages)
 	}
 
 	// Token usage will be shown in embed footer, no need to add as warning

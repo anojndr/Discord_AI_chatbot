@@ -369,7 +369,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 		finalContent := responseContents[len(responseContents)-1]
 
 		// Add token usage now that generation is complete
-		finalCurrentTokens := utils.EstimateTokenCount(messages, cfg)
+		finalCurrentTokens := utils.EstimateTokenCount(messages)
 		finalFooterInfo := &utils.FooterInfo{
 			Model:              model,
 			WebSearchPerformed: webSearchPerformed,
