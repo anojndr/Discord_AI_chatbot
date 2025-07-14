@@ -3,6 +3,7 @@ package utils
 import (
 	"DiscordAIChatbot/internal/messaging"
 	"log"
+	"sync"
 
 	"github.com/pkoukk/tiktoken-go"
 )
@@ -10,11 +11,25 @@ import (
 // DefaultTokenLimit provides a conservative context window size for most 16k models.
 const DefaultTokenLimit = 128000
 
+var (
+	cachedEncoder *tiktoken.Tiktoken
+	encoderOnce   sync.Once
+	encoderError  error
+)
+
+// getEncoder returns the cached o200k_base encoder, initializing it only once
+func getEncoder() (*tiktoken.Tiktoken, error) {
+	encoderOnce.Do(func() {
+		cachedEncoder, encoderError = tiktoken.GetEncoding("o200k_base")
+	})
+	return cachedEncoder, encoderError
+}
+
 // EstimateTokenCount provides accurate token count of a slice of messages using tiktoken.
 // Always uses o200k_base encoding regardless of the model used.
 func EstimateTokenCount(msgs []messaging.OpenAIMessage) int {
-	// Get o200k_base encoding
-	tke, err := tiktoken.GetEncoding("o200k_base")
+	// Get cached o200k_base encoding
+	tke, err := getEncoder()
 	if err != nil {
 		log.Printf("Warning: failed to get o200k_base encoding: %v, falling back to rough estimate", err)
 		// Fallback to rough estimation if tiktoken fails
@@ -73,8 +88,8 @@ func EstimateTokenCount(msgs []messaging.OpenAIMessage) int {
 // EstimateTokenCountFromText provides accurate token count for plain text using tiktoken.
 // Always uses o200k_base encoding regardless of the model used.
 func EstimateTokenCountFromText(text string) int {
-	// Get o200k_base encoding
-	tke, err := tiktoken.GetEncoding("o200k_base")
+	// Get cached o200k_base encoding
+	tke, err := getEncoder()
 	if err != nil {
 		log.Printf("Warning: failed to get o200k_base encoding: %v, falling back to rough estimate", err)
 		// Fallback to rough estimation if tiktoken fails
