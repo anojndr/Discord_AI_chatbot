@@ -255,7 +255,30 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 			}
 
 			// Prepare generation config
-			config := &genai.GenerateContentConfig{}
+			config := &genai.GenerateContentConfig{
+				SafetySettings: []*genai.SafetySetting{
+					{
+						Category:  "HARM_CATEGORY_HARASSMENT",
+						Threshold: "BLOCK_NONE",
+					},
+					{
+						Category:  "HARM_CATEGORY_HATE_SPEECH",
+						Threshold: "BLOCK_NONE",
+					},
+					{
+						Category:  "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+						Threshold: "BLOCK_NONE",
+					},
+					{
+						Category:  "HARM_CATEGORY_DANGEROUS_CONTENT",
+						Threshold: "BLOCK_NONE",
+					},
+					{
+						Category:  "HARM_CATEGORY_CIVIC_INTEGRITY",
+						Threshold: "BLOCK_NONE",
+					},
+				},
+			}
 
 			// Set system instruction if available - this is the correct way to handle system prompts in Gemini
 			// according to the Google Gemini API documentation
