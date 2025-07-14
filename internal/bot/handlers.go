@@ -171,7 +171,19 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 	// Also check for "at ai" prefix (case insensitive)
 	isAtAI := strings.HasPrefix(strings.ToLower(strings.TrimSpace(m.Content)), "at ai")
 
-	if !isDM && !isMentioned && !isAtAI {
+	// Check if this message is in a thread created by the bot
+	isInBotThread := false
+	if m.Member != nil && m.Member.GuildID != "" {
+		// Get channel info to check if it's a thread
+		channel, err := s.Channel(m.ChannelID)
+		if err == nil && channel.Type == discordgo.ChannelTypeGuildPublicThread {
+			// This is a thread, check if the bot participated in its creation
+			// We'll consider it a bot thread if the bot has sent messages in it
+			isInBotThread = b.isBotActiveInThread(s, m.ChannelID)
+		}
+	}
+
+	if !isDM && !isMentioned && !isAtAI && !isInBotThread {
 		return
 	}
 
@@ -248,13 +260,90 @@ func (b *Bot) validateMessageReference(ref *discordgo.MessageReference) bool {
 	return true
 }
 
+// isBotActiveInThread checks if the bot has sent messages in the given thread
+func (b *Bot) isBotActiveInThread(s *discordgo.Session, threadID string) bool {
+	// Check recent messages in the thread to see if the bot has participated
+	messages, err := s.ChannelMessages(threadID, 50, "", "", "")
+	if err != nil {
+		log.Printf("Failed to fetch thread messages for bot activity check: %v", err)
+		return false
+	}
+
+	botUserID := s.State.User.ID
+	for _, msg := range messages {
+		if msg.Author.ID == botUserID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// createThreadForResponse creates a thread for the bot's response
+func (b *Bot) createThreadForResponse(s *discordgo.Session, originalMsg *discordgo.MessageCreate) (string, error) {
+	// Generate a thread name based on the user's message content
+	threadName := "AI Chat"
+	if len(originalMsg.Content) > 0 {
+		// Use first 50 characters of the message as thread name
+		name := strings.TrimSpace(originalMsg.Content)
+		if len(name) > 50 {
+			name = name[:50] + "..."
+		}
+		if name != "" {
+			threadName = name
+		}
+	}
+
+	// Create the thread
+	thread, err := s.MessageThreadStart(originalMsg.ChannelID, originalMsg.ID, threadName, 60) // Auto-archive after 60 minutes
+	if err != nil {
+		return "", fmt.Errorf("failed to create thread: %w", err)
+	}
+
+	log.Printf("Created thread %s for message %s", thread.ID, originalMsg.ID)
+	return thread.ID, nil
+}
+
 // handleMessage processes a message and generates LLM response
 func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Create progress manager
-	progressMgr := utils.NewProgressManager(s, m.ChannelID)
+	// Check if threads are enabled and determine target channel early
+	b.mu.RLock()
+	useThreads := b.config.UseThreads
+	b.mu.RUnlock()
+
+	targetChannelID := m.ChannelID
+	messageRef := b.getProperMessageReference(m)
+
+	// Check if we're already in a thread
+	isAlreadyInThread := false
+	if m.GuildID != "" {
+		channel, err := s.Channel(m.ChannelID)
+		if err == nil && channel.Type == discordgo.ChannelTypeGuildPublicThread {
+			isAlreadyInThread = true
+		}
+	}
+
+	// Create thread if enabled and we're not already in one
+	if useThreads && !isAlreadyInThread {
+		threadID, err := b.createThreadForResponse(s, m)
+		if err != nil {
+			log.Printf("Failed to create thread, falling back to regular response: %v", err)
+			// Continue with regular response in the original channel
+		} else {
+			targetChannelID = threadID
+			log.Printf("Created thread %s for response", threadID)
+			// For thread responses, we don't need a message reference since the thread itself provides context
+			messageRef = nil
+		}
+	} else if isAlreadyInThread {
+		log.Printf("Already in thread %s, responding directly", m.ChannelID)
+	}
+
+	// Create progress manager with the correct channel ID (thread or original)
+	progressMgr := utils.NewProgressManager(s, targetChannelID)
 
 	// Show simple progress message once (as a reply)
-	if err := progressMgr.UpdateProgress(utils.ProgressProcessing, nil, b.getProperMessageReference(m)); err != nil {
+	if err := progressMgr.UpdateProgress(utils.ProgressProcessing, nil, messageRef); err != nil {
 		log.Printf("Failed to update progress: %v", err)
 	}
 
@@ -359,7 +448,7 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	// Generate response with web search information
-	b.generateResponse(s, m, currentModel, messages, warnings, progressMgr, b.getProperMessageReference(m), webSearchPerformed, searchResultCount)
+	b.generateResponse(s, m, currentModel, messages, warnings, progressMgr, messageRef, targetChannelID, webSearchPerformed, searchResultCount)
 }
 
 // updateProgressWithError updates the progress message with an error

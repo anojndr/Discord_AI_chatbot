@@ -29,6 +29,7 @@ type Config struct {
 	// Behavior settings
 	UsePlainResponses bool `yaml:"use_plain_responses"`
 	AllowDMs          bool `yaml:"allow_dms"`
+	UseThreads        bool `yaml:"use_threads"`
 
 	// Database settings
 	DatabaseURL string `yaml:"database_url"`
@@ -298,6 +299,9 @@ func parseConfig(data []byte) (*Config, error) {
 	}
 	if !config.AllowDMs {
 		config.AllowDMs = DefaultAllowDMs
+	}
+	if !config.UseThreads {
+		config.UseThreads = DefaultUseThreads
 	}
 
 	// Set web search defaults

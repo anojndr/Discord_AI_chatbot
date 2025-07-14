@@ -15,9 +15,12 @@ import (
 )
 
 // generateResponse generates and sends LLM response
-func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.MessageCreate, model string, messages []messaging.OpenAIMessage, warnings []string, progressMgr *utils.ProgressManager, messageRef *discordgo.MessageReference, webSearchPerformed bool, searchResultCount int) {
+func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.MessageCreate, model string, messages []messaging.OpenAIMessage, warnings []string, progressMgr *utils.ProgressManager, messageRef *discordgo.MessageReference, targetChannelID string, webSearchPerformed bool, searchResultCount int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+
+	// targetChannelID is now passed as a parameter from handleMessage
+	// which handles thread creation logic
 
 	// Start streaming
 	stream, err := b.llmClient.StreamChatCompletion(ctx, model, messages)
@@ -42,7 +45,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 				log.Printf("Failed to update progress message with error: %v", updateErr)
 
 				// If we can't update the progress message, send a new error message
-				_, sendErr := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+				_, sendErr := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 					Embed:     errorEmbed,
 					Reference: messageRef,
 					AllowedMentions: &discordgo.MessageAllowedMentions{
@@ -65,7 +68,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 				},
 			}
 
-			_, sendErr := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+			_, sendErr := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Embed:     errorEmbed,
 				Reference: messageRef,
 				AllowedMentions: &discordgo.MessageAllowedMentions{
@@ -201,7 +204,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 					},
 				}
 
-				_, sendErr := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+				_, sendErr := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 					Embed:     errorEmbed,
 					Reference: messageRef,
 					AllowedMentions: &discordgo.MessageAllowedMentions{
@@ -307,7 +310,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 						}
 					} else {
 						// Send new message if progress message update failed
-						responseMsg, err := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+						responseMsg, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 							Embed:     embed,
 							Reference: messageRef,
 							AllowedMentions: &discordgo.MessageAllowedMentions{
@@ -329,7 +332,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 					}
 				} else if needsNewMsg && len(responseContents) > 1 {
 					// Send new split message (previous message was already finalized above)
-					responseMsg, err := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+					responseMsg, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 						Embed:     embed,
 						Reference: messageRef,
 						AllowedMentions: &discordgo.MessageAllowedMentions{
@@ -405,7 +408,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 				components = utils.CreateActionButtons("placeholder", webSearchPerformed)
 			}
 
-			responseMsg, err := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+			responseMsg, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:    content,
 				Reference:  messageRef,
 				Components: components,
@@ -469,7 +472,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 			}
 
 			// Send table image as a separate message
-			_, err := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+			_, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:   fmt.Sprintf("📊 **Table:** %s", tableImage.Filename),
 				Files:     []*discordgo.File{file},
 				Reference: messageRef,
@@ -494,7 +497,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 			}
 
 			// Send chart image as a separate message
-			_, err := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+			_, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:   "📈 **Generated Chart**",
 				Files:     []*discordgo.File{file},
 				Reference: messageRef,
@@ -541,7 +544,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 			}
 
 			// Send generated image as a separate message
-			_, err := s.ChannelMessageSendComplex(originalMsg.ChannelID, &discordgo.MessageSend{
+			_, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:   "🎨 **Generated Image**",
 				Files:     []*discordgo.File{file},
 				Reference: messageRef,

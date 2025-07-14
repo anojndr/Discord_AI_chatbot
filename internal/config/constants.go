@@ -7,6 +7,7 @@ const (
 	DefaultMaxMessages   = 25
 	DefaultStatusMessage = "i love you"
 	DefaultAllowDMs      = true
+	DefaultUseThreads    = false
 
 	// LLM defaults
 	DefaultModel = "gemini/gemini-2.5-pro"

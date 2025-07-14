@@ -131,6 +131,7 @@ context_summarization:
 # ============================================================================
 use_plain_responses: false   # Use plain text instead of embeds (disables streaming)
 allow_dms: true             # Allow direct messages for non-admins
+use_threads: false          # Create threads for bot responses to continue conversations
 
 # ============================================================================
 # PERMISSIONS
