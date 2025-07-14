@@ -61,7 +61,7 @@ func (p *ProgressManager) UpdateProgress(state string, warnings []string, replyR
 	for _, warning := range warnings {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 			Name:   warning,
-			Value:  "⚠️",
+			Value:  " ",
 			Inline: false,
 		})
 	}
@@ -142,7 +142,7 @@ func CreateEmbed(content string, warnings []string, isComplete bool, footerInfo 
 	for _, warning := range warnings {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 			Name:   warning,
-			Value:  "⚠️", // Provide a non-empty value for warning fields
+			Value:  " ", // Provide a non-empty value for warning fields
 			Inline: false,
 		})
 	}
