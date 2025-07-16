@@ -383,9 +383,20 @@ processStream:
 					}
 				} else if needsNewMsg && len(responseContents) > 1 {
 					// Send new split message (previous message was already finalized above)
+					var newRef *discordgo.MessageReference
+					if len(responseMessages) > 0 {
+						lastMsg := responseMessages[len(responseMessages)-1]
+						newRef = &discordgo.MessageReference{
+							MessageID: lastMsg.ID,
+							ChannelID: lastMsg.ChannelID,
+							GuildID:   originalMsg.GuildID,
+						}
+					} else {
+						newRef = messageRef
+					}
 					responseMsg, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 						Embed:     embed,
-						Reference: messageRef,
+						Reference: newRef,
 						AllowedMentions: &discordgo.MessageAllowedMentions{
 							Parse:       []discordgo.AllowedMentionType{},
 							RepliedUser: false,
@@ -451,6 +462,7 @@ processStream:
 
 	// Handle plain responses
 	if usePlainResponses {
+		currentRef := messageRef
 		for i, content := range responseContents {
 			// Add download button to the last plain response
 			var components []discordgo.MessageComponent
@@ -461,7 +473,7 @@ processStream:
 
 			responseMsg, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:    content,
-				Reference:  messageRef,
+				Reference:  currentRef,
 				Components: components,
 				AllowedMentions: &discordgo.MessageAllowedMentions{
 					Parse:       []discordgo.AllowedMentionType{},
@@ -471,6 +483,13 @@ processStream:
 			if err != nil {
 				log.Printf("Failed to send plain message: %v", err)
 				continue
+			}
+
+			// Update message reference for subsequent messages
+			currentRef = &discordgo.MessageReference{
+				MessageID: responseMsg.ID,
+				ChannelID: responseMsg.ChannelID,
+				GuildID:   responseMsg.GuildID,
 			}
 
 			// Update button with actual message ID if this was the last message

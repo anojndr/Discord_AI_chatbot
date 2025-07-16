@@ -260,25 +260,6 @@ func (b *Bot) validateMessageReference(ref *discordgo.MessageReference) bool {
 	return true
 }
 
-// isBotActiveInThread checks if the bot has sent messages in the given thread
-func (b *Bot) isBotActiveInThread(s *discordgo.Session, threadID string) bool {
-	// Check recent messages in the thread to see if the bot has participated
-	messages, err := s.ChannelMessages(threadID, 50, "", "", "")
-	if err != nil {
-		log.Printf("Failed to fetch thread messages for bot activity check: %v", err)
-		return false
-	}
-
-	botUserID := s.State.User.ID
-	for _, msg := range messages {
-		if msg.Author.ID == botUserID {
-			return true
-		}
-	}
-
-	return false
-}
-
 // createThreadForResponse creates a thread for the bot's response
 func (b *Bot) createThreadForResponse(s *discordgo.Session, originalMsg *discordgo.MessageCreate) (string, error) {
 	// Generate a thread name based on the user's message content

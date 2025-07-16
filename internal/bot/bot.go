@@ -268,3 +268,22 @@ func createTableRenderer(cfg *config.Config) *utils.TableRenderer {
 		return utils.NewTableRenderer()
 	}
 }
+
+// isBotActiveInThread checks if the bot has sent messages in the given thread
+func (b *Bot) isBotActiveInThread(s *discordgo.Session, threadID string) bool {
+	// Check recent messages in the thread to see if the bot has participated
+	messages, err := s.ChannelMessages(threadID, 50, "", "", "")
+	if err != nil {
+		log.Printf("Failed to fetch thread messages for bot activity check: %v", err)
+		return false
+	}
+
+	botUserID := s.State.User.ID
+	for _, msg := range messages {
+		if msg.Author.ID == botUserID {
+			return true
+		}
+	}
+
+	return false
+}
