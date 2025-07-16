@@ -34,6 +34,7 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 
 	// Build chain by following parent messages
 	isCurrentMessage := true // The first message is the current one being responded to
+	maxMessagesReached := false
 	for currentMsg != nil && len(messages) < maxMessages {
 		// Check for cycles to prevent infinite loops
 		if processedMessages[currentMsg.ID] {
@@ -157,6 +158,11 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 		}
 	}
 
+	// Check if we exited because max_messages was reached
+	if currentMsg != nil && len(messages) >= maxMessages {
+		maxMessagesReached = true
+	}
+
 	// Reverse messages to have oldest first
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
@@ -166,6 +172,11 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 	// Reverse back to have newest first (as expected by rest of the code)
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
+	}
+
+	// Add warning if max_messages was reached
+	if maxMessagesReached {
+		warnings = append(warnings, fmt.Sprintf("⚠️ Only using last %d messages", maxMessages))
 	}
 
 	// Token usage will be shown in embed footer, no need to add as warning
