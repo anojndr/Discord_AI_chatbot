@@ -353,10 +353,15 @@ Return ONLY valid JSON in one of these formats:
 		Content: userContent,
 	})
 
-	// Get response from LLM
-	stream, err := llmClient.StreamChatCompletion(ctx, model, messages)
+	// Get response from LLM with fallback
+	stream, fallbackResult, err := llmClient.StreamChatCompletionWithFallback(ctx, model, messages)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get web search decision from LLM: %w", err)
+		return nil, fmt.Errorf("failed to get web search decision from LLM (original and fallback models failed): %w", err)
+	}
+	
+	// Log if fallback was used
+	if fallbackResult.UsedFallback {
+		log.Printf("Web search decision: Using fallback model %s (original model %s failed)", fallbackResult.FallbackModel, model)
 	}
 
 	// Collect the response

@@ -76,10 +76,15 @@ func (cs *ContextSummarizer) SummarizePairs(ctx context.Context, pairs []Convers
 	
 	log.Printf("Summarizing %d conversation pairs (%d tokens) using model %s", len(pairs), originalTokens, summarizationModel)
 
-	// Get summary from LLM
-	response, err := cs.llmClient.GetChatCompletion(ctx, summarizationMessages, summarizationModel)
+	// Get summary from LLM with fallback
+	response, fallbackResult, err := cs.llmClient.GetChatCompletionWithFallback(ctx, summarizationMessages, summarizationModel)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get summarization from LLM: %w", err)
+		return nil, fmt.Errorf("failed to get summarization from LLM (original and fallback models failed): %w", err)
+	}
+	
+	// Log if fallback was used
+	if fallbackResult.UsedFallback {
+		log.Printf("Context summarization: Using fallback model %s (original model %s failed)", fallbackResult.FallbackModel, summarizationModel)
 	}
 
 	// Extract summary content

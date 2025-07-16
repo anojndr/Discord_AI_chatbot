@@ -569,6 +569,81 @@ func (c *LLMClient) AddSystemPrompt(messages []messaging.OpenAIMessage, systemPr
 	return append(messages, systemMessage)
 }
 
+// FallbackResult contains the result of a fallback operation
+type FallbackResult struct {
+	UsedFallback    bool
+	FallbackModel   string
+	OriginalError   error
+}
+
+// StreamChatCompletionWithFallback streams chat completion with GPT 4.1 fallback
+func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model string, messages []messaging.OpenAIMessage) (<-chan StreamResponse, *FallbackResult, error) {
+	fallbackResult := &FallbackResult{
+		UsedFallback:  false,
+		FallbackModel: "",
+		OriginalError: nil,
+	}
+
+	// Try original model first
+	stream, err := c.StreamChatCompletion(ctx, model, messages)
+	if err != nil {
+		logging.LogToFile("Original model %s failed, attempting GPT 4.1 fallback: %v", model, err)
+		
+		// Store the original error
+		fallbackResult.OriginalError = err
+		
+		// Try GPT 4.1 fallback
+		fallbackModel := "pollinations/o3"
+		fallbackResult.FallbackModel = fallbackModel
+		
+		fallbackStream, fallbackErr := c.StreamChatCompletion(ctx, fallbackModel, messages)
+		if fallbackErr != nil {
+			logging.LogToFile("GPT 4.1 fallback also failed: %v", fallbackErr)
+			return nil, fallbackResult, fmt.Errorf("both original model (%s) and fallback model (%s) failed. Original error: %w, Fallback error: %v", model, fallbackModel, err, fallbackErr)
+		}
+		
+		fallbackResult.UsedFallback = true
+		logging.LogToFile("Successfully switched to GPT 4.1 fallback model")
+		return fallbackStream, fallbackResult, nil
+	}
+	
+	return stream, fallbackResult, nil
+}
+
+// GetChatCompletionWithFallback gets a complete chat completion with GPT 4.1 fallback
+func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages []messaging.OpenAIMessage, model string) (string, *FallbackResult, error) {
+	fallbackResult := &FallbackResult{
+		UsedFallback:  false,
+		FallbackModel: "",
+		OriginalError: nil,
+	}
+
+	// Try original model first
+	response, err := c.GetChatCompletion(ctx, messages, model)
+	if err != nil {
+		logging.LogToFile("Original model %s failed, attempting GPT 4.1 fallback: %v", model, err)
+		
+		// Store the original error
+		fallbackResult.OriginalError = err
+		
+		// Try GPT 4.1 fallback
+		fallbackModel := "pollinations/o3"
+		fallbackResult.FallbackModel = fallbackModel
+		
+		fallbackResponse, fallbackErr := c.GetChatCompletion(ctx, messages, fallbackModel)
+		if fallbackErr != nil {
+			logging.LogToFile("GPT 4.1 fallback also failed: %v", fallbackErr)
+			return "", fallbackResult, fmt.Errorf("both original model (%s) and fallback model (%s) failed. Original error: %w, Fallback error: %v", model, fallbackModel, err, fallbackErr)
+		}
+		
+		fallbackResult.UsedFallback = true
+		logging.LogToFile("Successfully switched to GPT 4.1 fallback model")
+		return fallbackResponse, fallbackResult, nil
+	}
+	
+	return response, fallbackResult, nil
+}
+
 // TestProviderConnectivity tests if a provider's server is reachable and responds correctly
 func (c *LLMClient) TestProviderConnectivity(providerName string) error {
 	provider, exists := c.config.Providers[providerName]

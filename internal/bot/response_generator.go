@@ -10,6 +10,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"DiscordAIChatbot/internal/llm"
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/utils"
 )
@@ -22,8 +23,33 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 	// targetChannelID is now passed as a parameter from handleMessage
 	// which handles thread creation logic
 
-	// Start streaming
-	stream, err := b.llmClient.StreamChatCompletion(ctx, model, messages)
+	// Initialize tracking variables
+	actualModel := model
+	fallbackAttempted := false
+	
+	// Helper function to attempt streaming with potential fallback
+	attemptStream := func(attemptModel string, isFallback bool) (<-chan llm.StreamResponse, error) {
+		if isFallback {
+			log.Printf("Attempting fallback to model: %s", attemptModel)
+		}
+		
+		stream, fallbackResult, err := b.llmClient.StreamChatCompletionWithFallback(ctx, attemptModel, messages)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Update actualModel if fallback was used in the LLM client
+		if fallbackResult != nil && fallbackResult.UsedFallback {
+			actualModel = fallbackResult.FallbackModel
+		} else if isFallback {
+			actualModel = attemptModel
+		}
+		
+		return stream, nil
+	}
+
+	// Start streaming with original model
+	stream, err := attemptStream(model, false)
 	if err != nil {
 		log.Printf("Failed to create chat completion stream: %v", err)
 
@@ -35,7 +61,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 				Description: fmt.Sprintf("Failed to process your request:\n\n```\n%v\n```", err),
 				Color:       0xFF0000, // Red color for errors
 				Footer: &discordgo.MessageEmbedFooter{
-					Text: fmt.Sprintf("🤖 Model: %s", model),
+					Text: fmt.Sprintf("🤖 Model: %s", actualModel),
 				},
 			}
 
@@ -64,7 +90,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 				Description: fmt.Sprintf("Failed to process your request:\n\n```\n%v\n```", err),
 				Color:       0xFF0000, // Red color for errors
 				Footer: &discordgo.MessageEmbedFooter{
-					Text: fmt.Sprintf("🤖 Model: %s", model),
+					Text: fmt.Sprintf("🤖 Model: %s", actualModel),
 				},
 			}
 
@@ -81,6 +107,13 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 			}
 		}
 		return
+	}
+
+processStream:
+	// Add fallback notification to warnings if we used fallback
+	if actualModel != model {
+		warnings = append(warnings, fmt.Sprintf("⚠️ Fallback to %s (original model failed)", actualModel))
+		log.Printf("Using fallback model %s for response", actualModel)
 	}
 
 	// Thread-safe access to config
@@ -119,7 +152,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 
 	// For streaming phase, omit token usage so it shows only at completion
 	footerInfo := &utils.FooterInfo{
-		Model:              model,
+		Model:              actualModel,
 		WebSearchPerformed: webSearchPerformed,
 		SearchResultCount:  searchResultCount,
 		// Token fields left zero; they will appear in final embed
@@ -138,7 +171,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 		case <-ctx.Done():
 			if !firstContentReceived {
 				log.Printf("Context timeout reached, updating progress message")
-				b.updateProgressWithError(s, progressMgr, "Request timed out after 5 minutes", model)
+				b.updateProgressWithError(s, progressMgr, "Request timed out after 5 minutes", actualModel)
 			}
 		case <-done:
 			// Normal completion
@@ -149,6 +182,24 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 	for response := range stream {
 		if response.Error != nil {
 			log.Printf("Stream error: %v", response.Error)
+			
+			// If we haven't received any content yet and haven't tried fallback, attempt it
+			if !firstContentReceived && !fallbackAttempted {
+				log.Printf("Stream error before receiving content, attempting fallback")
+				fallbackAttempted = true
+				
+				// Try fallback model
+				fallbackModel := "pollinations/o3"
+				fallbackStream, fallbackErr := attemptStream(fallbackModel, true)
+				if fallbackErr != nil {
+					log.Printf("Fallback model also failed: %v", fallbackErr)
+					// Continue with original error handling below
+				} else {
+					// Replace the stream with fallback stream and restart processing
+					stream = fallbackStream
+					goto processStream
+				}
+			}
 
 			// Check if this is a quota exceeded error and provide user-friendly message
 			var errorContent string
@@ -170,7 +221,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 					Description: fmt.Sprintf("An error occurred while processing the response:\n\n```\n%v\n```", response.Error),
 					Color:       0xFF0000, // Red color for errors
 					Footer: &discordgo.MessageEmbedFooter{
-						Text: fmt.Sprintf("🤖 Model: %s", model),
+						Text: fmt.Sprintf("🤖 Model: %s", actualModel),
 					},
 				}
 
@@ -200,7 +251,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 					Description: fmt.Sprintf("An error occurred while processing the response:\n\n```\n%v\n```", response.Error),
 					Color:       0xFF0000, // Red color for errors
 					Footer: &discordgo.MessageEmbedFooter{
-						Text: fmt.Sprintf("🤖 Model: %s", model),
+						Text: fmt.Sprintf("🤖 Model: %s", actualModel),
 					},
 				}
 
@@ -374,7 +425,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 		// Add token usage now that generation is complete
 		finalCurrentTokens := utils.EstimateTokenCount(messages)
 		finalFooterInfo := &utils.FooterInfo{
-			Model:              model,
+			Model:              actualModel,
 			WebSearchPerformed: webSearchPerformed,
 			SearchResultCount:  searchResultCount,
 			CurrentTokens:      finalCurrentTokens,
@@ -597,9 +648,31 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 		// Channel might be full, that's okay
 	}
 
-	// If we never received any content and still have a progress message, ensure it's cleaned up
+	// If we never received any content, attempt fallback before giving up
+	if !firstContentReceived && !fallbackAttempted {
+		log.Printf("No content received from %s, attempting fallback to GPT 4.1", actualModel)
+		fallbackAttempted = true
+		
+		// Try fallback model
+		fallbackModel := "pollinations/o3"
+		fallbackStream, fallbackErr := attemptStream(fallbackModel, true)
+		if fallbackErr != nil {
+			log.Printf("Fallback model also failed: %v", fallbackErr)
+			// Both models failed, show error
+			if progressMgr != nil && progressMgr.GetMessageID() != "" {
+				b.updateProgressWithError(s, progressMgr, "Both original and fallback models failed", actualModel)
+			}
+			return
+		}
+		
+		// Replace the stream with fallback stream and restart processing
+		stream = fallbackStream
+		goto processStream
+	}
+	
+	// If we still have no content after fallback attempt, clean up
 	if !firstContentReceived && progressMgr != nil && progressMgr.GetMessageID() != "" {
-		log.Printf("No content received, cleaning up progress message")
-		b.updateProgressWithError(s, progressMgr, "No response received from the model", model)
+		log.Printf("No content received even after fallback, cleaning up progress message")
+		b.updateProgressWithError(s, progressMgr, "No response received from the model", actualModel)
 	}
 }
