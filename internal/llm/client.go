@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -19,11 +20,19 @@ import (
 	"DiscordAIChatbot/internal/storage"
 )
 
+// ImageCacheEntry represents a cached image
+type ImageCacheEntry struct {
+	Data     []byte
+	MIMEType string
+}
+
 // LLMClient handles communication with LLM providers
 type LLMClient struct {
-	config        *config.Config
-	apiKeyManager *storage.APIKeyManager
+	config         *config.Config
+	apiKeyManager  *storage.APIKeyManager
 	geminiProvider *providers.GeminiProvider
+	imageCache     map[string]*ImageCacheEntry
+	imageCacheMu   sync.RWMutex
 }
 
 // Client is an alias for LLMClient for convenience
@@ -33,9 +42,10 @@ type Client = LLMClient
 func NewLLMClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager) *LLMClient {
 	logging.LogToFile("Initializing LLM client")
 	return &LLMClient{
-		config:        cfg,
-		apiKeyManager: apiKeyManager,
+		config:         cfg,
+		apiKeyManager:  apiKeyManager,
 		geminiProvider: providers.NewGeminiProvider(cfg, apiKeyManager),
+		imageCache:     make(map[string]*ImageCacheEntry),
 	}
 }
 

@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -13,11 +15,61 @@ import (
 
 // downloadImageFromURL downloads an image from a URL and returns the image data and MIME type
 func (c *LLMClient) downloadImageFromURL(ctx context.Context, imageURL string) ([]byte, string, error) {
+	// Generate cache key from URL hash
+	hasher := sha256.New()
+	hasher.Write([]byte(imageURL))
+	cacheKey := hex.EncodeToString(hasher.Sum(nil))
+
+	// Check cache first (especially important for data URLs)
+	c.imageCacheMu.RLock()
+	if entry, exists := c.imageCache[cacheKey]; exists {
+		c.imageCacheMu.RUnlock()
+		return entry.Data, entry.MIMEType, nil
+	}
+	c.imageCacheMu.RUnlock()
+
+	// Process the image
+	var imageData []byte
+	var mimeType string
+	var err error
+
 	// Check if it's a data URL
 	if strings.HasPrefix(imageURL, "data:") {
-		return c.parseDataURL(imageURL)
+		imageData, mimeType, err = c.parseDataURL(imageURL)
+	} else {
+		imageData, mimeType, err = c.downloadFromHTTP(ctx, imageURL)
 	}
 
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Cache the result
+	c.imageCacheMu.Lock()
+	// Simple cache size management - limit to 1000 entries
+	if len(c.imageCache) >= 1000 {
+		// Remove oldest entries (simple approach - clear half the cache)
+		newCache := make(map[string]*ImageCacheEntry)
+		count := 0
+		for k, v := range c.imageCache {
+			if count < 500 {
+				newCache[k] = v
+				count++
+			}
+		}
+		c.imageCache = newCache
+	}
+	c.imageCache[cacheKey] = &ImageCacheEntry{
+		Data:     imageData,
+		MIMEType: mimeType,
+	}
+	c.imageCacheMu.Unlock()
+
+	return imageData, mimeType, nil
+}
+
+// downloadFromHTTP downloads an image from an HTTP URL
+func (c *LLMClient) downloadFromHTTP(ctx context.Context, imageURL string) ([]byte, string, error) {
 	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 30 * time.Second,
