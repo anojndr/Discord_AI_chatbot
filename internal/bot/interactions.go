@@ -50,13 +50,14 @@ func (b *Bot) handleDownloadResponse(s *discordgo.Session, i *discordgo.Interact
 	// Get the message content from the node manager
 	node, exists := b.nodeManager.Get(messageID)
 	if !exists {
-		// Fallback: try to get content from the actual Discord message
-		msg, err := s.ChannelMessage(i.ChannelID, messageID)
+		// Fallback: try to get the full content by traversing the reply chain
+		content, err := b.getFullResponseContent(s, i.ChannelID, messageID)
 		if err != nil {
+			log.Printf("Failed to get full response content: %v", err)
 			if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: "❌ Could not retrieve response content.",
+					Content: "❌ Could not retrieve full response content.",
 					Flags:   discordgo.MessageFlagsEphemeral,
 				},
 			}); err != nil {
@@ -64,15 +65,6 @@ func (b *Bot) handleDownloadResponse(s *discordgo.Session, i *discordgo.Interact
 			}
 			return
 		}
-
-		// Extract content from embed or message content
-		var content string
-		if len(msg.Embeds) > 0 && msg.Embeds[0].Description != "" {
-			content = msg.Embeds[0].Description
-		} else {
-			content = msg.Content
-		}
-
 		b.sendResponseAsFile(s, i, content, messageID)
 		return
 	}
@@ -106,26 +98,21 @@ func (b *Bot) handleViewOutputBetter(s *discordgo.Session, i *discordgo.Interact
 	var content string
 
 	if !exists {
-		// Fallback: try to get content from the actual Discord message
-		msg, err := s.ChannelMessage(i.ChannelID, messageID)
+		// Fallback: try to get the full content by traversing the reply chain
+		var err error
+		content, err = b.getFullResponseContent(s, i.ChannelID, messageID)
 		if err != nil {
+			log.Printf("Failed to get full response content: %v", err)
 			if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: "❌ Could not retrieve response content.",
+					Content: "❌ Could not retrieve full response content.",
 					Flags:   discordgo.MessageFlagsEphemeral,
 				},
 			}); err != nil {
 				log.Printf("Failed to respond to interaction: %v", err)
 			}
 			return
-		}
-
-		// Extract content from embed or message content
-		if len(msg.Embeds) > 0 && msg.Embeds[0].Description != "" {
-			content = msg.Embeds[0].Description
-		} else {
-			content = msg.Content
 		}
 	} else {
 		// Get content from node
@@ -367,4 +354,58 @@ func (b *Bot) createRetryMessage(s *discordgo.Session, i *discordgo.InteractionC
 
 	// Process the synthetic message
 	go b.handleMessage(s, syntheticMessage)
+}
+// getFullResponseContent traverses the reply chain to reconstruct the full
+// content of a potentially multi-part bot response.
+func (b *Bot) getFullResponseContent(s *discordgo.Session, channelID, messageID string) (string, error) {
+	var contentParts []string
+	currentMessageID := messageID
+
+	for currentMessageID != "" {
+		msg, err := s.ChannelMessage(channelID, currentMessageID)
+		if err != nil {
+			// If we can't fetch a message, we stop traversing.
+			// This can happen if a message is deleted or we lose permissions.
+			log.Printf("Error fetching message %s: %v. Returning assembled content so far.", currentMessageID, err)
+			break
+		}
+
+		// Extract content from the current message's embed
+		var currentContent string
+		if len(msg.Embeds) > 0 && msg.Embeds[0].Description != "" {
+			currentContent = msg.Embeds[0].Description
+		} else {
+			currentContent = msg.Content
+		}
+
+		// Prepend the content to our parts slice
+		if currentContent != "" {
+			contentParts = append([]string{currentContent}, contentParts...)
+		}
+
+		// Check if this message is a reply and if the author of the replied-to message is the bot
+		if msg.MessageReference != nil && msg.MessageReference.MessageID != "" {
+			refMsg, err := s.ChannelMessage(channelID, msg.MessageReference.MessageID)
+			if err != nil {
+				log.Printf("Error fetching referenced message %s: %v. Stopping traversal.", msg.MessageReference.MessageID, err)
+				break // Stop if we can't get the parent
+			}
+
+			// We only continue up the chain if the parent message is also from our bot.
+			// This prevents us from accidentally including user messages in the download.
+			if refMsg.Author.ID == s.State.User.ID {
+				currentMessageID = refMsg.ID
+			} else {
+				currentMessageID = "" // Stop traversal
+			}
+		} else {
+			currentMessageID = "" // Stop traversal
+		}
+	}
+
+	if len(contentParts) == 0 {
+		return "", fmt.Errorf("no content could be retrieved for message %s", messageID)
+	}
+
+	return strings.Join(contentParts, "\n\n"), nil
 }
