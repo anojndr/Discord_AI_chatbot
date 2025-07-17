@@ -11,6 +11,7 @@ type MsgNode struct {
 	Text            string                  `json:"text"`
 	Images          []ImageContent          `json:"images"`
 	GeneratedImages []GeneratedImageContent `json:"generated_images"`
+	AudioFiles      []AudioContent          `json:"audio_files"`
 
 	Role   string `json:"role"` // "user" or "assistant"
 	UserID string `json:"user_id"`
@@ -44,12 +45,21 @@ type ImageURL struct {
 	URL string `json:"url"`
 }
 
+// AudioContent represents an audio file attachment
+type AudioContent struct {
+	Type     string `json:"type"`
+	MIMEType string `json:"mime_type"`
+	URL      string `json:"url"`
+	Data     []byte `json:"data,omitempty"`
+}
+
 // MessageContent represents content for OpenAI API
 type MessageContent struct {
 	Type           string                 `json:"type"`
 	Text           string                 `json:"text,omitempty"`
 	ImageURL       *ImageURL              `json:"image_url,omitempty"`
 	GeneratedImage *GeneratedImageContent `json:"generated_image,omitempty"`
+	AudioFile      *AudioContent          `json:"audio_file,omitempty"`
 }
 
 // OpenAIMessage represents a message in OpenAI format
@@ -65,6 +75,7 @@ func NewMsgNode() *MsgNode {
 		Role:            "assistant",
 		Images:          make([]ImageContent, 0),
 		GeneratedImages: make([]GeneratedImageContent, 0),
+		AudioFiles:      make([]AudioContent, 0),
 	}
 }
 
@@ -122,6 +133,27 @@ func (m *MsgNode) AddGeneratedImage(image GeneratedImageContent) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.GeneratedImages = append(m.GeneratedImages, image)
+}
+
+// GetAudioFiles safely gets the audio files
+func (m *MsgNode) GetAudioFiles() []AudioContent {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]AudioContent(nil), m.AudioFiles...)
+}
+
+// SetAudioFiles safely sets the audio files
+func (m *MsgNode) SetAudioFiles(audioFiles []AudioContent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.AudioFiles = audioFiles
+}
+
+// AddAudioFile safely adds an audio file
+func (m *MsgNode) AddAudioFile(audioFile AudioContent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.AudioFiles = append(m.AudioFiles, audioFile)
 }
 
 // GetWebSearchInfo safely gets web search information

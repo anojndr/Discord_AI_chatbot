@@ -124,6 +124,14 @@ func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages [
 						Data:     part.GeneratedImage.Data,
 					}
 					parts = append(parts, &genai.Part{InlineData: blob})
+				} else if part.Type == "audio_file" && part.AudioFile != nil {
+					// Handle audio files with inline data
+					blob := &genai.Blob{
+						MIMEType: part.AudioFile.MIMEType,
+						Data:     part.AudioFile.Data,
+					}
+					parts = append(parts, &genai.Part{InlineData: blob})
+					log.Printf("Successfully processed audio file: %d bytes, %s", len(part.AudioFile.Data), part.AudioFile.MIMEType)
 				}
 			}
 		default:
@@ -192,7 +200,13 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 				logging.LogExternalContentToFile("  Part %d [Text]: %s", j, part.Text)
 			}
 			if part.InlineData != nil {
-				logging.LogExternalContentToFile("  Part %d [Image]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
+				if strings.HasPrefix(part.InlineData.MIMEType, "image/") {
+					logging.LogExternalContentToFile("  Part %d [Image]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
+				} else if strings.HasPrefix(part.InlineData.MIMEType, "audio/") {
+					logging.LogExternalContentToFile("  Part %d [Audio]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
+				} else {
+					logging.LogExternalContentToFile("  Part %d [Data]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
+				}
 			}
 		}
 	}

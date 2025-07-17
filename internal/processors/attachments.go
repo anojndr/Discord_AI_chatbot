@@ -16,21 +16,26 @@ import (
 	"DiscordAIChatbot/internal/messaging"
 )
 
-// ProcessAttachments processes Discord message attachments and returns images and text content
-func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAttachment, fileProcessor *FileProcessor) ([]messaging.ImageContent, string, bool, error) {
+// ProcessAttachments processes Discord message attachments and returns images, audio, and text content
+func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAttachment, fileProcessor *FileProcessor) ([]messaging.ImageContent, []messaging.AudioContent, string, bool, error) {
 	// Launch one goroutine per attachment without an artificial semaphore limit.
 
-	// We need to preserve the order of image attachments so that the images the
-	// user supplies appear in the same order when forwarded to the LLM. Because
-	// we are processing attachments concurrently, we first keep the image result
-	// together with its original index and then sort at the end.
+	// We need to preserve the order of attachments so that they appear in the
+	// same order when forwarded to the LLM. Because we are processing attachments
+	// concurrently, we first keep the result together with its original index
+	// and then sort at the end.
 	type indexedImage struct {
 		idx int
 		img messaging.ImageContent
 	}
+	type indexedAudio struct {
+		idx   int
+		audio messaging.AudioContent
+	}
 
 	var (
 		imageResults      []indexedImage
+		audioResults      []indexedAudio
 		textParts         []string
 		hasBadAttachments bool
 		mu                sync.Mutex
@@ -40,7 +45,7 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 
 	// Early exit if no attachments
 	if len(attachments) == 0 {
-		return nil, "", false, nil
+		return nil, nil, "", false, nil
 	}
 
 	for idx, att := range attachments {
@@ -55,11 +60,12 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 
 			// Check supported types (extension detection first)
 			isImage := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "image/")
+			isAudio := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "audio/")
 			isText := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "text/")
 			isPDF := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "application/pdf")
 			isTextByExt := fileProcessor.isTextFileByExtension(attachment.Filename)
 
-			if !isImage && !isText && !isPDF && !isTextByExt {
+			if !isImage && !isAudio && !isText && !isPDF && !isTextByExt {
 				mu.Lock()
 				hasBadAttachments = true
 				mu.Unlock()
@@ -104,6 +110,20 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 				}})
 				mu.Unlock()
 				return
+			} else if isAudio {
+				// Audio attachment -> store raw data
+				mu.Lock()
+				audioResults = append(audioResults, indexedAudio{
+					idx: index,
+					audio: messaging.AudioContent{
+						Type:     "audio_file",
+						MIMEType: attachment.ContentType,
+						URL:      attachment.URL,
+						Data:     data,
+					},
+				})
+				mu.Unlock()
+				return
 			}
 
 			// Text or PDF attachment -> process via FileProcessor
@@ -135,15 +155,21 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 	wg.Wait()
 
 	if firstErr != nil {
-		return nil, "", hasBadAttachments, firstErr
+		return nil, nil, "", hasBadAttachments, firstErr
 	}
 
-	// Re-establish the original order for images
+	// Re-establish the original order for images and audio
 	sort.Slice(imageResults, func(i, j int) bool { return imageResults[i].idx < imageResults[j].idx })
 	var orderedImages []messaging.ImageContent
 	for _, res := range imageResults {
 		orderedImages = append(orderedImages, res.img)
 	}
 
-	return orderedImages, strings.Join(textParts, "\n\n"), hasBadAttachments, nil
+	sort.Slice(audioResults, func(i, j int) bool { return audioResults[i].idx < audioResults[j].idx })
+	var orderedAudio []messaging.AudioContent
+	for _, res := range audioResults {
+		orderedAudio = append(orderedAudio, res.audio)
+	}
+
+	return orderedImages, orderedAudio, strings.Join(textParts, "\n\n"), hasBadAttachments, nil
 }

@@ -166,7 +166,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	}
 
 	// Process attachments from current message early so they can be included in web search decision
-	images, attachmentText, hasBadAttachments, err := processors.ProcessAttachments(context.Background(), msg.Attachments, b.fileProcessor)
+	images, audioFiles, attachmentText, hasBadAttachments, err := processors.ProcessAttachments(context.Background(), msg.Attachments, b.fileProcessor)
 	if err != nil {
 		log.Printf("Failed to process attachments: %v", err)
 	}
@@ -182,13 +182,16 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			// This is not a direct reply, so parent attachments won't be in conversation history
 			// Process them for context (e.g., thread conversations, implicit continuations)
 			log.Printf("Processing %d attachments from parent message for non-reply context", len(parentMsg.Attachments))
-			parentImages, parentAttachmentText, parentHasBadAttachments, err := processors.ProcessAttachments(context.Background(), parentMsg.Attachments, b.fileProcessor)
+			parentImages, parentAudioFiles, parentAttachmentText, parentHasBadAttachments, err := processors.ProcessAttachments(context.Background(), parentMsg.Attachments, b.fileProcessor)
 			if err != nil {
 				log.Printf("Failed to process parent attachments: %v", err)
 			} else {
 				// Combine parent and current attachments
 				if len(parentImages) > 0 {
 					images = append(parentImages, images...)
+				}
+				if len(parentAudioFiles) > 0 {
+					audioFiles = append(parentAudioFiles, audioFiles...)
 				}
 
 				if parentAttachmentText != "" {
@@ -346,6 +349,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	// Set node properties using the already processed content
 	node.SetText(fullContent)
 	node.SetImages(images)
+	node.SetAudioFiles(audioFiles)
 	node.HasBadAttachments = hasBadAttachments
 
 	if msg.Author.ID == s.State.User.ID {

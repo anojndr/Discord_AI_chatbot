@@ -442,6 +442,7 @@ func (c *LLMClient) BuildMessages(nodes []*messaging.MsgNode, maxImages int, acc
 		text := node.GetText()
 		images := node.GetImages()
 		generatedImages := node.GetGeneratedImages()
+		audioFiles := node.GetAudioFiles()
 
 		// No character-based truncation
 		truncatedText := text
@@ -489,7 +490,7 @@ func (c *LLMClient) BuildMessages(nodes []*messaging.MsgNode, maxImages int, acc
 		}
 
 		// Skip empty messages
-		if truncatedText == "" && len(limitedImages) == 0 && len(limitedGeneratedImages) == 0 {
+		if truncatedText == "" && len(limitedImages) == 0 && len(limitedGeneratedImages) == 0 && len(audioFiles) == 0 {
 			continue
 		}
 
@@ -504,8 +505,8 @@ func (c *LLMClient) BuildMessages(nodes []*messaging.MsgNode, maxImages int, acc
 		}
 
 		// Set content
-		if acceptImages && (len(limitedImages) > 0 || len(limitedGeneratedImages) > 0) {
-			// Multi-content format with text and images
+		if (acceptImages && (len(limitedImages) > 0 || len(limitedGeneratedImages) > 0)) || len(audioFiles) > 0 {
+			// Multi-content format with text, images, and audio
 			var content []messaging.MessageContent
 
 			if truncatedText != "" {
@@ -528,6 +529,15 @@ func (c *LLMClient) BuildMessages(nodes []*messaging.MsgNode, maxImages int, acc
 				content = append(content, messaging.MessageContent{
 					Type:           "generated_image",
 					GeneratedImage: &genImg,
+				})
+			}
+
+			// Add audio files
+			for _, audio := range audioFiles {
+				audio := audio // Capture loop variable
+				content = append(content, messaging.MessageContent{
+					Type:      "audio_file",
+					AudioFile: &audio,
 				})
 			}
 
