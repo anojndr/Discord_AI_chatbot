@@ -428,8 +428,13 @@ func (w *WebSearchClient) ExtractURLs(ctx context.Context, urls []string) (strin
 
 	req.Header.Set("Content-Type", "application/json")
 
+	// Create a new client for this request without a timeout, but reusing the transport
+	extractClient := &http.Client{
+		Transport: w.httpClient.Transport,
+	}
+
 	// Make request
-	resp, err := w.httpClient.Do(req)
+	resp, err := extractClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
