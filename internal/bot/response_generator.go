@@ -532,6 +532,21 @@ processStream:
 		log.Printf("Failed to process charts: %v", err)
 	}
 
+	// Determine the correct message reference for replies (tables, charts, images).
+	// We want to reply to the bot's own message that contained the content.
+	var replyRef *discordgo.MessageReference
+	if len(responseMessages) > 0 {
+		lastBotMsg := responseMessages[len(responseMessages)-1]
+		replyRef = &discordgo.MessageReference{
+			MessageID: lastBotMsg.ID,
+			ChannelID: lastBotMsg.ChannelID,
+			GuildID:   originalMsg.GuildID,
+		}
+	} else {
+		// Fallback to the original message reference if no bot messages were sent
+		replyRef = messageRef
+	}
+
 	// Send table images as separate attachments if any were generated
 	if len(tableImages) > 0 {
 		for _, tableImage := range tableImages {
@@ -541,11 +556,11 @@ processStream:
 				Reader: bytes.NewReader(tableImage.Data),
 			}
 
-			// Send table image as a separate message
+			// Send table image as a separate message, replying to the bot's response
 			_, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:   fmt.Sprintf("📊 **Table:** %s", tableImage.Filename),
 				Files:     []*discordgo.File{file},
-				Reference: messageRef,
+				Reference: replyRef,
 				AllowedMentions: &discordgo.MessageAllowedMentions{
 					Parse:       []discordgo.AllowedMentionType{},
 					RepliedUser: false,
@@ -566,11 +581,11 @@ processStream:
 				Reader: bytes.NewReader(chartImage.Data),
 			}
 
-			// Send chart image as a separate message
+			// Send chart image as a separate message, replying to the bot's response
 			_, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:   "📈 **Generated Chart**",
 				Files:     []*discordgo.File{file},
-				Reference: messageRef,
+				Reference: replyRef,
 				AllowedMentions: &discordgo.MessageAllowedMentions{
 					Parse:       []discordgo.AllowedMentionType{},
 					RepliedUser: false,
@@ -613,11 +628,11 @@ processStream:
 				Reader: bytes.NewReader(imageData),
 			}
 
-			// Send generated image as a separate message
+			// Send generated image as a separate message, replying to the bot's response
 			_, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:   "🎨 **Generated Image**",
 				Files:     []*discordgo.File{file},
-				Reference: messageRef,
+				Reference: replyRef,
 				AllowedMentions: &discordgo.MessageAllowedMentions{
 					Parse:       []discordgo.AllowedMentionType{},
 					RepliedUser: false,
