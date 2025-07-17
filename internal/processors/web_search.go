@@ -210,13 +210,46 @@ Use web search when responding requires up-to-date information from the web or l
    - For basic prompts (like "Hi", "Hello", simple greetings): Use the basic prompt text itself as the search query without modifications
    - For complex prompts: Extract meaningful search terms from the content before "SEARCH THE NET"
 2. **Apply criteria**: Determine if the query falls into one of the four categories listed above
-3. **Use conversation context**: Review chat history to understand follow-up questions and include context in search queries
-4. **Generate appropriate search queries**: Create specific, focused search queries in English. Always translate foreign language terms to English for optimal results. For complex queries involving multiple entities or concepts, generate separate queries for each entity plus one for their relationship/comparison. For comparative queries (e.g., "A vs B", "which is better A or B", "A compared to B"), generate multiple queries: one for each entity being compared plus one for the direct comparison. **IMPORTANT: For time-sensitive queries (news, releases, current events), append the current year (%d) to search queries to ensure fresh results**
-5. **Handle images**: If images are attached, identify specific objects, people, places, or text content in the image and use those exact identifications in search queries. For text in images, extract and use the actual text content
-6. **Return proper JSON**: Use exact format shown in examples
+3. **Use conversation context**: Review chat history to understand follow-up questions and include context in search queries.
+4. **CRITICAL: Reformulate vague queries**: For vague or incomplete follow-up queries (e.g., "why?", "tell me more", "how"), you MUST use the conversation history to create specific, self-contained search queries. NEVER use the vague query directly. When the previous message contains a list of items or concepts, generate a separate, specific search query for EACH item, relating it back to the core subject.
+5. **Generate appropriate search queries**: Create specific, focused search queries in English. Always translate foreign language terms to English for optimal results. For complex queries involving multiple entities or concepts, generate separate queries for each entity plus one for their relationship/comparison. For comparative queries (e.g., "A vs B", "which is better A or B", "A compared to B"), generate multiple queries: one for each entity being compared plus one for the direct comparison. **IMPORTANT: For time-sensitive queries (news, releases, current events), append the current year (%d) to search queries to ensure fresh results**
+6. **Handle images**: If images are attached, identify specific objects, people, places, or text content in the image and use those exact identifications in search queries. For text in images, extract and use the actual text content
+7. **Return proper JSON**: Use exact format shown in examples
 </instructions>
 
 <examples>
+<example>
+<chat_history>
+[
+  {"role": "user", "content": "at ai how come pls explain in one sentence [image of a meme]"},
+  {"role": "assistant", "content": "This meme humorously suggests that seemingly perfect women often have common, relatable, and unseen health issues, using the dog's smug expression to deliver the \"secret\" information."}
+]
+</chat_history>
+<latest_query>search the web why</latest_query>
+<o>
+{
+  "web_search_required": true,
+  "search_queries": ["why would beautiful women have tummy issues", "why would beautiful women have low iron", "why would beautiful women have poor eyesight"]
+}
+</o>
+</example>
+
+<example>
+<chat_history>
+[
+  {"role": "user", "content": "what is the latest version of the go language?"},
+  {"role": "assistant", "content": "The latest version of Go is 1.22.0."}
+]
+</chat_history>
+<latest_query>why</latest_query>
+<o>
+{
+  "web_search_required": true,
+  "search_queries": ["why was go 1.22.0 released"]
+}
+</o>
+</example>
+
 <example>
 <latest_query>What is 15 + 27?</latest_query>
 <o>
