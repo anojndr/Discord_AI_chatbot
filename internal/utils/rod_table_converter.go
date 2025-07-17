@@ -296,12 +296,6 @@ func (rtc *RodTableConverter) ProcessResponseWithRod(ctx context.Context, conten
 
 		tableImages = append([]TableImage{*tableImage}, tableImages...) // Prepend to maintain order
 
-		// Replace table markdown with a placeholder
-		before := processedContent[:table.StartPos]
-		after := processedContent[table.EndPos:]
-		replacement := fmt.Sprintf("\n*[Table converted to image: %s]*\n", tableImage.Filename)
-
-		processedContent = before + replacement + after
 	}
 
 	return processedContent, tableImages, nil

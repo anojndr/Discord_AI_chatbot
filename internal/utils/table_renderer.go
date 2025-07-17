@@ -453,12 +453,6 @@ func (tr *TableRenderer) ProcessResponse(ctx context.Context, content string) (s
 
 		tableImages = append([]TableImage{*tableImage}, tableImages...) // Prepend to maintain order
 
-		// Replace table markdown with a placeholder or remove it
-		before := processedContent[:table.StartPos]
-		after := processedContent[table.EndPos:]
-		replacement := fmt.Sprintf("\n*[Table converted to image: %s]*\n", tableImage.Filename)
-
-		processedContent = before + replacement + after
 	}
 
 	return processedContent, tableImages, nil
