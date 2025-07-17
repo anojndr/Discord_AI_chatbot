@@ -159,6 +159,352 @@ web_search:
   max_results: 5
   max_chars_per_url: 5000
   model: gemini/gemini-2.5-flash  # Model for web search decisions
+  decider_prompt: |
+    ## Task
+
+    Analyze the latest query (and any attached images) to determine if a web search is needed.
+
+    ---
+
+    ## Criteria for Web Search
+
+    Use web search when a response requires up-to-date or location-specific information. The four main categories are:
+
+    1.  **Local Information**: Questions requiring location-specific data (e.g., weather, local businesses, events).
+    2.  **Freshness**: Questions about recent developments or topics where information changes frequently (e.g., news, stock prices, sports schedules, software releases).
+    3.  **Niche Information**: Questions about specialized or obscure topics that are not widely documented (e.g., small companies, specific regulations, technical specifications).
+    4.  **Accuracy-Critical**: Questions where outdated information could cause significant problems (e.g., medical information, legal requirements, travel advisories).
+
+    ---
+
+    ## Instructions
+
+    1.  **Apply Criteria**
+        Determine if the query falls into one of the four categories listed above.
+
+    2.  **Use Conversation Context**
+        Review the chat history to understand follow-up questions and include necessary context in your search queries.
+
+    3.  **CRITICAL: Reformulate Vague Queries**
+        For vague follow-up queries (e.g., "why?", "tell me more"), you **MUST** use the conversation history to create a specific, self-contained search query. **NEVER** use the vague query directly.
+        - **For lists**: When the previous message contains a list of items, generate a separate, specific search query for **EACH** item, relating it back to the core subject.
+
+    4.  **Generate Appropriate Search Queries**
+        Create specific, focused search queries in English. Always translate foreign language terms to English.
+        - **For comparisons** (e.g., "A vs B", "which is better A or B"): Generate multiple queries, one for each entity being compared.
+        - **IMPORTANT**: For time-sensitive queries (news, releases, current events), append the current year (`%d`) to search queries to ensure fresh results.
+
+    5.  **Handle Images**
+        If an image is attached, identify specific objects, people, places, or text and use those exact identifications in your search queries.
+
+    6.  **Return Proper JSON**
+        Use the exact format shown in the examples and output format section.
+
+    ---
+
+    ## Examples
+
+    ### 2 Examples for Requirement: No Search Needed
+    <details>
+    <summary>Example 1: Creative Writing</summary>
+
+    **Latest Query:**
+    `Write a short story about a robot who discovers music.`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": false
+    }
+    ```
+    </details>
+
+    <details>
+    <summary>Example 2: General Knowledge / Math</summary>
+
+    **Latest Query:**
+    `What is the capital of Australia and what is 57 * 12?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": false
+    }
+    ```
+    </details>
+
+    ### 2 Examples for Requirement: Local Information
+    <details>
+    <summary>Example 3: Local Weather</summary>
+
+    **Latest Query:**
+    `What's the weather like in Tokyo today?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["Tokyo weather today"]
+    }
+    ```
+    </details>
+
+    <details>
+    <summary>Example 4: Local Businesses</summary>
+
+    **Latest Query:**
+    `Find me a highly-rated coffee shop near the British Museum.`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["highly-rated coffee shops near the British Museum London"]
+    }
+    ```
+    </details>
+
+    ### 2 Examples for Requirement: Freshness
+    <details>
+    <summary>Example 5: Recent Software Release</summary>
+
+    **Latest Query:**
+    `What are the new features in Python 3.12?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["Python 3.12 new features"]
+    }
+    ```
+    </details>
+
+    <details>
+    <summary>Example 6: Current Events</summary>
+
+    **Latest Query:**
+    `Who won the Formula 1 race last weekend?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["Formula 1 race results last weekend %d"]
+    }
+    ```
+    </details>
+
+    ### 2 Examples for Requirement: Niche Information
+    <details>
+    <summary>Example 7: Obscure Company</summary>
+
+    **Latest Query:**
+    `What does the company "Viam" do?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["what is Viam company"]
+    }
+    ```
+    </details>
+
+    <details>
+    <summary>Example 8: Technical Specifications</summary>
+
+    **Latest Query:**
+    `What is the pinout for a Raspberry Pi 5's GPIO header?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["Raspberry Pi 5 GPIO header pinout"]
+    }
+    ```
+    </details>
+
+    ### 2 Examples for Requirement: Accuracy-Critical
+    <details>
+    <summary>Example 9: Travel Regulations</summary>
+
+    **Latest Query:**
+    `What are the current carry-on liquid restrictions for flights in the EU?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["EU flight carry-on liquid restrictions %d"]
+    }
+    ```
+    </details>
+
+    <details>
+    <summary>Example 10: Medical Information</summary>
+
+    **Latest Query:**
+    `What are the latest FDA-approved treatments for migraines?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["latest FDA approved treatments for migraines %d"]
+    }
+    ```
+    </details>
+
+    ### 2 Examples for Requirement: Reformulating Vague Queries
+    <details>
+    <summary>Example 11: Vague Follow-up (from List)</summary>
+
+    **Chat History:**
+    ```json
+    [
+      {
+        "role": "user",
+        "content": "What are some common health myths?"
+      },
+      {
+        "role": "assistant",
+        "content": "Some common health myths include the ideas that you need to drink 8 glasses of water a day, that eggs are bad for your heart, and that you can catch a cold from being in cold weather."
+      }
+    ]
+    ```
+    **Latest Query:**
+    `tell me more about those`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": [
+        "evidence for drinking 8 glasses of water a day",
+        "are eggs bad for heart health",
+        "can you catch a cold from cold weather"
+      ]
+    }
+    ```
+    </details>
+
+    <details>
+    <summary>Example 12: Vague Follow-up (from Statement)</summary>
+
+    **Chat History:**
+    ```json
+    [
+      {
+        "role": "user",
+        "content": "Tell me about the James Webb Space Telescope"
+      },
+      {
+        "role": "assistant",
+        "content": "The James Webb Space Telescope (JWST) is a space telescope designed primarily to conduct infrared astronomy..."
+      }
+    ]
+    ```
+    **Latest Query:**
+    `how much did it cost?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["James Webb Space Telescope total cost"]
+    }
+    ```
+    </details>
+
+    ### 2 Examples for Requirement: Handling Comparisons
+    <details>
+    <summary>Example 13: Software Comparison</summary>
+
+    **Latest Query:**
+    `What are the differences between React and Vue for web development?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": [
+        "React for web development pros and cons",
+        "Vue for web development pros and cons"
+      ]
+    }
+    ```
+    </details>
+
+    <details>
+    <summary>Example 14: Product Comparison</summary>
+
+    **Latest Query:**
+    `Which is better, the Pixel 8 or the iPhone 15?`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": [
+        "Google Pixel 8 review",
+        "Apple iPhone 15 review"
+      ]
+    }
+    ```
+    </details>
+
+    ### 2 Examples for Requirement: Handling Images
+    <details>
+    <summary>Example 15: Landmark Identification</summary>
+
+    **Latest Query:**
+    `Can you tell me more about this landmark? [image of the Sydney Opera House]`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["Sydney Opera House history and facts"]
+    }
+    ```
+    </details>
+
+    <details>
+    <summary>Example 16: Object Identification</summary>
+
+    **Latest Query:**
+    `What kind of plant is this? [image of a Monstera deliciosa plant]`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["Monstera deliciosa plant identification and care"]
+    }
+    ```
+    </details>
+
+    ---
+
+    ## Output Format
+
+    Return **ONLY** valid JSON in one of the following formats.
+
+    -   **If no search is needed:**
+        ```json
+        {
+          "web_search_required": false
+        }
+        ```
+    -   **If a search is needed:**
+        ```json
+        {
+          "web_search_required": true,
+          "search_queries": ["query1", "query2", "..."]
+        }
+        ```
 
 # Google Lens visual search (powered by SerpAPI)
 serpapi:

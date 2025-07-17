@@ -45,6 +45,7 @@ type Config struct {
 		MaxResults int    `yaml:"max_results"`
 		MaxChars   int    `yaml:"max_chars_per_url"`
 		Model      string `yaml:"model"`
+		DeciderPrompt string `yaml:"decider_prompt"`
 	} `yaml:"web_search"`
 
 	// SerpAPI settings
