@@ -20,6 +20,85 @@ import (
 	"DiscordAIChatbot/internal/utils"
 )
 
+var (
+	commands = []*discordgo.ApplicationCommand{
+		{
+			Name:        "model",
+			Description: "Switch between different LLM models",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:         discordgo.ApplicationCommandOptionString,
+					Name:         "model_name",
+					Description:  "The model you want to use",
+					Required:     true,
+					Autocomplete: true,
+				},
+			},
+		},
+		{
+			Name:        "systemprompt",
+			Description: "Manage your custom system prompt",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "action",
+					Description: "Choose an action: view, set, or clear",
+					Required:    true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{Name: "view", Value: "view"},
+						{Name: "set", Value: "set"},
+						{Name: "clear", Value: "clear"},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "prompt",
+					Description: "The system prompt to set (max 8000 chars)",
+					Required:    false,
+				},
+			},
+		},
+		{
+			Name:        "apikeys",
+			Description: "Manage API keys (admin only)",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "action",
+					Description: "Choose an action: status or reset",
+					Required:    true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{Name: "status", Value: "status"},
+						{Name: "reset", Value: "reset"},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "provider",
+					Description: "The provider to reset keys for (e.g., 'gemini', 'openai')",
+					Required:    false,
+				},
+			},
+		},
+		{
+			Name:        "cleardatabase",
+			Description: "Clear and re-initialize the database (owner only)",
+		},
+		{
+			Name:        "generatevideo",
+			Description: "Generate a video using Veo",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "prompt",
+					Description: "The prompt for the video",
+					Required:    true,
+				},
+			},
+		},
+	}
+)
+
 // Bot represents the Discord bot instance that handles all Discord interactions,
 // manages conversations, processes messages, and integrates with LLM providers.
 // It maintains the bot's configuration, session state, and various service clients.

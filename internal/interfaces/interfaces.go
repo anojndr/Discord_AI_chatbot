@@ -17,6 +17,9 @@ type LLMProvider interface {
 	// StreamChatCompletion streams chat completion responses
 	StreamChatCompletion(ctx context.Context, model string, messages []messaging.OpenAIMessage) (<-chan StreamResponse, error)
 
+	// GenerateVideo generates a video
+	GenerateVideo(ctx context.Context, model string, prompt string) ([]byte, error)
+
 	// BuildMessages creates OpenAI messages from conversation chain
 	BuildMessages(nodes []*messaging.MsgNode, maxImages int, acceptImages, acceptUsernames bool) ([]messaging.OpenAIMessage, []string)
 

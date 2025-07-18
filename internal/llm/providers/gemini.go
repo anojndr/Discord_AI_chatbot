@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"google.golang.org/genai"
 
@@ -420,4 +421,130 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 	}()
 
 	return responseChan, nil
+}
+
+// GenerateVideo generates a video using a Gemini video generation model (e.g., Veo).
+// It handles the long-running operation by polling for completion.
+func (g *GeminiProvider) GenerateVideo(ctx context.Context, model string, prompt string, isAPIKeyError func(error) bool, is503Error func(error) bool, retryWith503Backoff func(context.Context, func() error) error, isInternalError func(error) bool, retryWithInternalBackoff func(context.Context, func() error) error) ([]byte, error) {
+	parts := strings.SplitN(model, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid model format: %s (expected gemini/model)", model)
+	}
+
+	providerName := parts[0]
+	modelName := parts[1]
+
+	provider, exists := g.config.Providers[providerName]
+	if !exists {
+		return nil, fmt.Errorf("unknown provider: %s", providerName)
+	}
+
+	availableKeys := provider.GetAPIKeys()
+	if len(availableKeys) == 0 {
+		return nil, fmt.Errorf("no API keys configured for provider: %s", providerName)
+	}
+
+	modelParams, exists := g.config.Models[model]
+	if !exists {
+		return nil, fmt.Errorf("model parameters not found for: %s", model)
+	}
+
+	videoConfig := &genai.GenerateVideosConfig{}
+	if modelParams.VideoGeneration != nil {
+		if modelParams.VideoGeneration.AspectRatio != "" {
+			videoConfig.AspectRatio = modelParams.VideoGeneration.AspectRatio
+		}
+		if modelParams.VideoGeneration.PersonGeneration != "" {
+			videoConfig.PersonGeneration = modelParams.VideoGeneration.PersonGeneration
+		}
+	}
+
+	logging.LogToFile("Starting Gemini Video Generation: Model=%s, Provider=%s", modelName, providerName)
+
+	maxRetries := len(availableKeys)
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		apiKey, err := g.apiKeyManager.GetNextAPIKey(providerName, availableKeys)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get API key: %w", err)
+		}
+
+		oldKey := os.Getenv("GEMINI_API_KEY")
+		if err := os.Setenv("GEMINI_API_KEY", apiKey); err != nil {
+			log.Printf("Failed to set GEMINI_API_KEY: %v", err)
+		}
+		defer func() {
+			if oldKey != "" {
+				if err := os.Setenv("GEMINI_API_KEY", oldKey); err != nil {
+					log.Printf("Failed to restore GEMINI_API_KEY: %v", err)
+				}
+			} else {
+				if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+					log.Printf("Failed to unset GEMINI_API_KEY: %v", err)
+				}
+			}
+		}()
+
+		var client *genai.Client
+		err = retryWithInternalBackoff(ctx, func() error {
+			return retryWith503Backoff(ctx, func() error {
+				var clientErr error
+				client, clientErr = genai.NewClient(ctx, nil)
+				return clientErr
+			})
+		})
+
+		if err != nil {
+			if isAPIKeyError(err) {
+				g.apiKeyManager.MarkKeyAsBad(providerName, apiKey, err.Error())
+				log.Printf("API key issue detected, trying next key: %v", err)
+				continue
+			}
+			return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+		}
+
+		operation, err := client.Models.GenerateVideos(ctx, modelName, prompt, nil, videoConfig)
+		if err != nil {
+			if isAPIKeyError(err) || is503Error(err) || isInternalError(err) {
+				log.Printf("Retriable error during video generation initiation: %v", err)
+				continue
+			}
+			return nil, fmt.Errorf("failed to start video generation: %w", err)
+		}
+
+		for !operation.Done {
+			log.Printf("Video generation in progress, checking again in 20 seconds...")
+			time.Sleep(20 * time.Second)
+			operation, err = client.Operations.GetVideosOperation(ctx, operation, nil)
+			if err != nil {
+				if isAPIKeyError(err) || is503Error(err) || isInternalError(err) {
+					log.Printf("Retriable error while polling video generation status: %v", err)
+					break // Break inner loop to try next key
+				}
+				return nil, fmt.Errorf("failed to get video generation status: %w", err)
+			}
+		}
+
+		if err != nil { // This checks for the polling error that broke the loop
+			continue // Try next API key
+		}
+
+		if operation.Response != nil && len(operation.Response.GeneratedVideos) > 0 {
+			video := operation.Response.GeneratedVideos[0]
+			// The Download call populates the VideoBytes field.
+			_, err := client.Files.Download(ctx, video.Video, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to download video content: %w", err)
+			}
+
+			if video.Video != nil && len(video.Video.VideoBytes) > 0 {
+				log.Printf("Successfully generated and downloaded video: %d bytes", len(video.Video.VideoBytes))
+				return video.Video.VideoBytes, nil
+			}
+		}
+
+		log.Printf("Video generation finished but no video data was returned.")
+		return nil, fmt.Errorf("video generation completed but no video was returned")
+	}
+
+	return nil, fmt.Errorf("all API keys failed for provider: %s", providerName)
 }

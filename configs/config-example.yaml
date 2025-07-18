@@ -98,6 +98,11 @@ models:
   "gemini/gemini-2.0-flash-preview-image-generation":
     token_limit: 32000
     temperature: 1.0
+  "gemini/veo-3.0-generate-preview":
+    token_limit: 32000 # This is a placeholder, not used for video generation
+    video_generation:
+      aspect_ratio: "16:9"
+      person_generation: "allow_all"
 
   # xAI
   "x-ai/grok-3":

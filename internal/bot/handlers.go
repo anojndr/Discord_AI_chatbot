@@ -130,6 +130,18 @@ func (b *Bot) registerCommands() error {
 			Name:        "cleardatabase",
 			Description: "Clear the database",
 		},
+		{
+			Name:        "generatevideo",
+			Description: "Generate a video using Veo",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "prompt",
+					Description: "The prompt for the video",
+					Required:    true,
+				},
+			},
+		},
 	}
 
 	for _, cmd := range commands {

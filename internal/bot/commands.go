@@ -1,10 +1,12 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sort"
 	"strings"
+	"time"
 
 	"DiscordAIChatbot/internal/storage"
 	"github.com/bwmarrin/discordgo"
@@ -23,6 +25,8 @@ func (b *Bot) handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionC
 		b.handleAPIKeysCommand(s, i)
 	case "cleardatabase":
 		b.handleClearDatabaseCommand(s, i)
+	case "generatevideo":
+		b.handleGenerateVideoCommand(s, i)
 	}
 }
 
@@ -522,4 +526,54 @@ func (b *Bot) handleClearDatabaseCommand(s *discordgo.Session, i *discordgo.Inte
 	}); err != nil {
 		log.Printf("Failed to respond to interaction: %v", err)
 	}
+}
+
+// handleGenerateVideoCommand handles the /generatevideo slash command
+func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	if len(data.Options) == 0 {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Please provide a prompt for video generation.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	prompt := data.Options[0].StringValue()
+
+	// Acknowledge the interaction immediately
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		videoData, err := b.llmClient.GenerateVideo(ctx, "gemini/veo-3.0-generate-preview", prompt)
+		if err != nil {
+			log.Printf("Failed to generate video: %v", err)
+			errorContent := fmt.Sprintf("❌ Failed to generate video: %v", err)
+			s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &errorContent,
+			})
+			return
+		}
+
+		successContent := "✅ Video generated successfully!"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &successContent,
+			Files: []*discordgo.File{
+				{
+					Name:        "video.mp4",
+					ContentType: "video/mp4",
+					Reader:      strings.NewReader(string(videoData)),
+				},
+			},
+		})
+	}()
 }

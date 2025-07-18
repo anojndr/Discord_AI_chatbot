@@ -110,6 +110,45 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 		}
 	}
 	
+	// Detect explicit "veo" invocation (query must start with "veo ")
+	if strings.HasPrefix(lc, "veo ") && isCurrentMessage {
+		prompt := strings.TrimSpace(cleanedContent[len("veo"):])
+		go func() {
+			// Send a "thinking" message first
+			thinkingMsg, _ := s.ChannelMessageSend(msg.ChannelID, "Generating video with Veo, please wait...")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			videoData, err := b.llmClient.GenerateVideo(ctx, "gemini/veo-3.0-generate-preview", prompt)
+
+			// Delete the "thinking" message
+			if thinkingMsg != nil {
+				s.ChannelMessageDelete(thinkingMsg.ChannelID, thinkingMsg.ID)
+			}
+
+			if err != nil {
+				log.Printf("Failed to generate video: %v", err)
+				s.ChannelMessageSend(msg.ChannelID, fmt.Sprintf("❌ Failed to generate video: %v", err))
+				return
+			}
+
+			s.ChannelMessageSendComplex(msg.ChannelID, &discordgo.MessageSend{
+				Content: "✅ Video generated successfully!",
+				Files: []*discordgo.File{
+					{
+						Name:        "video.mp4",
+						ContentType: "video/mp4",
+						Reader:      strings.NewReader(string(videoData)),
+					},
+				},
+				Reference: msg.Reference(),
+			})
+		}()
+		// End processing for this message
+		return
+	}
+	
 	// Detect explicit "askchannel" invocation (query must start with "askchannel ")
 	if !isGoogleLensQuery && isCurrentMessage {
 		isAskChannelQuery, channelQuery = processors.IsAskChannelQuery(cleanedContent)

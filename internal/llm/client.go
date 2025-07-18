@@ -93,6 +93,14 @@ func (c *LLMClient) createGeminiStream(ctx context.Context, model string, messag
 	return responseChan, nil
 }
 
+// GenerateVideo generates a video using the appropriate provider
+func (c *LLMClient) GenerateVideo(ctx context.Context, model string, prompt string) ([]byte, error) {
+	if !c.isGeminiModel(model) {
+		return nil, fmt.Errorf("video generation is only supported for Gemini models")
+	}
+
+	return c.geminiProvider.GenerateVideo(ctx, model, prompt, c.isAPIKeyError, c.is503Error, c.retryWith503Backoff, c.isInternalError, c.retryWithInternalBackoff)
+}
 
 // CreateChatCompletionStream creates a streaming chat completion
 func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string, messages []messaging.OpenAIMessage) (*openai.ChatCompletionStream, error) {
