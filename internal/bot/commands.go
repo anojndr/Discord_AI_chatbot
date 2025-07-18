@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"DiscordAIChatbot/internal/storage"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -20,6 +21,8 @@ func (b *Bot) handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionC
 		b.handleSystemPromptCommand(s, i)
 	case "apikeys":
 		b.handleAPIKeysCommand(s, i)
+	case "cleardatabase":
+		b.handleClearDatabaseCommand(s, i)
 	}
 }
 
@@ -448,5 +451,75 @@ func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.Interac
 		},
 	}); err != nil {
 		log.Printf("Failed to respond to autocomplete interaction: %v", err)
+	}
+}
+
+// handleClearDatabaseCommand handles the /cleardatabase slash command
+func (b *Bot) handleClearDatabaseCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Get user ID
+	var userID string
+	if i.User != nil {
+		userID = i.User.ID
+	} else if i.Member != nil && i.Member.User != nil {
+		userID = i.Member.User.ID
+	}
+
+	// Check if user is the specific user allowed to use this command
+	if userID != "676735636656357396" {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ You do not have permission to use this command.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	// Thread-safe access to config
+	b.mu.RLock()
+	config := b.config
+	b.mu.RUnlock()
+
+	// Check if config is nil (safety check)
+	if config == nil {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Configuration is not available",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	err := storage.DropAllTables(config.DatabaseURL)
+	var response string
+	if err != nil {
+		log.Printf("Failed to drop tables: %v", err)
+		response = "❌ Failed to clear the database."
+	} else {
+		err = storage.InitializeAllTables(config.DatabaseURL)
+		if err != nil {
+			log.Printf("Failed to re-initialize tables: %v", err)
+			response = "❌ Failed to re-initialize the database."
+		} else {
+			response = "✅ Database cleared and re-initialized successfully."
+			log.Printf("User %s cleared and re-initialized the database.", userID)
+		}
+	}
+
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: response,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	}); err != nil {
+		log.Printf("Failed to respond to interaction: %v", err)
 	}
 }

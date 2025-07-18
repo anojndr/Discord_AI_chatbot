@@ -141,3 +141,32 @@ func InitializeAllTables(dbURL string) error {
 
 	return tx.Commit()
 }
+
+// DropAllTables drops all tables from the database
+func DropAllTables(dbURL string) error {
+	db, err := GetDatabase(dbURL)
+	if err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	tables := []string{
+		"message_nodes",
+		"chart_libraries",
+		"user_preferences",
+		"bad_api_keys",
+	}
+
+	for _, table := range tables {
+		if _, err := tx.Exec("DROP TABLE IF EXISTS " + table + " CASCADE"); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}

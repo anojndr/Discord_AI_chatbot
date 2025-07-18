@@ -126,6 +126,10 @@ func (b *Bot) registerCommands() error {
 				},
 			},
 		},
+		{
+			Name:        "cleardatabase",
+			Description: "Clear the database",
+		},
 	}
 
 	for _, cmd := range commands {
