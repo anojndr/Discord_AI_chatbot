@@ -12,6 +12,8 @@ type YouTubeURLExtractor struct {
 	youtubeRegex *regexp.Regexp
 	// Regex for extracting video ID
 	videoIDRegex *regexp.Regexp
+	// Regex for extracting playlist ID
+	playlistIDRegex *regexp.Regexp
 }
 
 // NewYouTubeURLExtractor creates a new YouTube URL extractor with compiled regex patterns
@@ -22,15 +24,21 @@ func NewYouTubeURLExtractor() *YouTubeURLExtractor {
 	// - youtube.com/embed/VIDEO_ID
 	// - youtube.com/v/VIDEO_ID
 	// - m.youtube.com variants
-	// - youtube.com/watch?v=VIDEO_ID&other_params
-	youtubePattern := `(?i)(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[&?][\w=&%-]*)?`
+	// - music.youtube.com variants
+	// - youtube.com/playlist?list=PLAYLIST_ID
+	// - youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID
+	youtubePattern := `(?i)(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|playlist\?list=)|youtu\.be\/)([a-zA-Z0-9_-]+)(?:[&?][\w=&%-]*)?`
 
 	// Pattern specifically for extracting video ID from various YouTube URL formats
-	videoIDPattern := `(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})`
+	videoIDPattern := `(?:v=|v\/|embed\/|youtu\.be\/|\/v\/|watch\?v=)([a-zA-Z0-9_-]{11})`
+
+	// Pattern for extracting playlist ID
+	playlistIDPattern := `(?:list=)([a-zA-Z0-9_-]+)`
 
 	return &YouTubeURLExtractor{
-		youtubeRegex: regexp.MustCompile(youtubePattern),
-		videoIDRegex: regexp.MustCompile(videoIDPattern),
+		youtubeRegex:    regexp.MustCompile(youtubePattern),
+		videoIDRegex:    regexp.MustCompile(videoIDPattern),
+		playlistIDRegex: regexp.MustCompile(playlistIDPattern),
 	}
 }
 
@@ -45,12 +53,12 @@ func (y *YouTubeURLExtractor) ExtractYouTubeURLs(text string) []string {
 	seen := make(map[string]bool)
 
 	for _, match := range matches {
-		cleanURL := y.normalizeYouTubeURL(match)
-		if cleanURL != "" && !seen[cleanURL] {
-			// Additional validation using net/url
-			if y.isValidYouTubeURL(cleanURL) {
-				urls = append(urls, cleanURL)
-				seen[cleanURL] = true
+		// Use the original match as it's more likely to be correct, especially for playlists
+		normalizedURL := y.normalizeYouTubeURL(match)
+		if normalizedURL != "" && !seen[normalizedURL] {
+			if y.isValidYouTubeURL(normalizedURL) {
+				urls = append(urls, normalizedURL)
+				seen[normalizedURL] = true
 			}
 		}
 	}
@@ -66,9 +74,21 @@ func (y *YouTubeURLExtractor) ExtractVideoID(youtubeURL string) (string, bool) {
 	matches := y.videoIDRegex.FindStringSubmatch(youtubeURL)
 	if len(matches) >= 2 {
 		videoID := matches[1]
-		// YouTube video IDs are exactly 11 characters long
 		if len(videoID) == 11 {
 			return videoID, true
+		}
+	}
+	return "", false
+}
+
+// ExtractPlaylistID extracts the playlist ID from a YouTube URL
+func (y *YouTubeURLExtractor) ExtractPlaylistID(youtubeURL string) (string, bool) {
+	matches := y.playlistIDRegex.FindStringSubmatch(youtubeURL)
+	if len(matches) >= 2 {
+		playlistID := matches[1]
+		// Playlist IDs can vary in length, but we can do a basic check
+		if len(playlistID) > 11 { // Usually longer than video IDs
+			return playlistID, true
 		}
 	}
 	return "", false
@@ -94,9 +114,16 @@ func (y *YouTubeURLExtractor) normalizeYouTubeURL(input string) string {
 		input = "https://" + input
 	}
 
-	// Extract video ID and create normalized URL
+	// If it's a playlist or music URL, return it as is to preserve all parameters
+	if strings.Contains(input, "list=") || strings.Contains(input, "music.youtube.com") {
+		return input
+	}
+
+	// For other URLs, extract video ID and create a standard URL
 	videoID, found := y.ExtractVideoID(input)
 	if !found {
+		// Fallback for URLs that might not have a video ID but are valid (e.g., channel pages)
+		// For now, we return empty if no video ID, to avoid processing non-video URLs
 		return ""
 	}
 
@@ -123,6 +150,7 @@ func (y *YouTubeURLExtractor) isValidYouTubeURL(input string) bool {
 		"m.youtube.com",
 		"youtu.be",
 		"www.youtu.be",
+		"music.youtube.com",
 	}
 
 	isValidHost := false
@@ -137,19 +165,29 @@ func (y *YouTubeURLExtractor) isValidYouTubeURL(input string) bool {
 		return false
 	}
 
-	// Extract and validate video ID
-	videoID, found := y.ExtractVideoID(input)
-	if !found {
+	// A URL is valid if it has either a valid video ID or a valid playlist ID
+	videoID, hasVideoID := y.ExtractVideoID(input)
+	_, hasPlaylistID := y.ExtractPlaylistID(input)
+
+	if !hasVideoID && !hasPlaylistID {
 		return false
 	}
 
-	// YouTube video IDs are exactly 11 characters and contain only alphanumeric, underscore, and hyphen
-	if len(videoID) != 11 {
-		return false
+	if hasVideoID {
+		// YouTube video IDs are exactly 11 characters and contain only alphanumeric, underscore, and hyphen
+		if len(videoID) != 11 {
+			return false
+		}
+		validChars := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+		if !validChars.MatchString(videoID) {
+			return false
+		}
 	}
 
-	validChars := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-	return validChars.MatchString(videoID)
+	// No specific validation for playlist ID format for now, as they can vary.
+	// The presence of a playlist ID is considered valid enough for this check.
+
+	return true
 }
 
 // DetectYouTubeURLs is a convenience function that creates an extractor and extracts URLs
