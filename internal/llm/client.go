@@ -577,8 +577,8 @@ func (c *LLMClient) AddSystemPrompt(messages []messaging.OpenAIMessage, systemPr
 		systemPrompt += "Today's date is {date}. The current time is {time}."
 	}
 
-	systemPrompt = strings.ReplaceAll(systemPrompt, "{date}", now.Format("January 02 2006"))
-	systemPrompt = strings.ReplaceAll(systemPrompt, "{time}", now.Format("15:04:05 MST-0700"))
+	systemPrompt = strings.ReplaceAll(systemPrompt, "{date}", now.Format("Mon, 02 Jan 2006"))
+	systemPrompt = strings.ReplaceAll(systemPrompt, "{time}", now.Format("15:04:05 -0700"))
 
 	// Trim any leading/trailing whitespace that may have been introduced
 	systemPrompt = strings.TrimSpace(systemPrompt)
