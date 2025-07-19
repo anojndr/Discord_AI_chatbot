@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 // MsgNode represents a node in the conversation chain
@@ -174,16 +175,15 @@ func (m *MsgNode) SetWebSearchInfo(performed bool, resultCount int) {
 
 // MsgNodeManager manages message nodes with caching
 type MsgNodeManager struct {
-	nodes    map[string]*MsgNode
-	mu       sync.RWMutex
-	maxNodes int
+	cache *lru.Cache[string, *MsgNode] // Use the LRU cache
+	mu    sync.RWMutex
 }
 
 // NewMsgNodeManager creates a new message node manager
 func NewMsgNodeManager(maxNodes int) *MsgNodeManager {
+	cache, _ := lru.New[string, *MsgNode](maxNodes)
 	return &MsgNodeManager{
-		nodes:    make(map[string]*MsgNode),
-		maxNodes: maxNodes,
+		cache: cache,
 	}
 }
 
@@ -192,12 +192,12 @@ func (m *MsgNodeManager) GetOrCreate(messageID string) *MsgNode {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if node, exists := m.nodes[messageID]; exists {
+	if node, exists := m.cache.Get(messageID); exists {
 		return node
 	}
 
 	node := NewMsgNode()
-	m.nodes[messageID] = node
+	m.cache.Add(messageID, node)
 	return node
 }
 
@@ -205,18 +205,14 @@ func (m *MsgNodeManager) GetOrCreate(messageID string) *MsgNode {
 func (m *MsgNodeManager) Get(messageID string) (*MsgNode, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	node, exists := m.nodes[messageID]
-	return node, exists
+	return m.cache.Get(messageID)
 }
 
 // Set sets a node
 func (m *MsgNodeManager) Set(messageID string, node *MsgNode) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	m.nodes[messageID] = node
-	m.cleanup()
+	m.cache.Add(messageID, node)
 }
 
 // Delete removes a node
@@ -224,40 +220,12 @@ func (m *MsgNodeManager) Delete(messageID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	delete(m.nodes, messageID)
-}
-
-// cleanup removes oldest nodes if we exceed maxNodes
-func (m *MsgNodeManager) cleanup() {
-	if len(m.nodes) <= m.maxNodes {
-		return
-	}
-
-	// Find oldest nodes by message ID (string comparison works for Discord snowflakes)
-	var messageIDs []string
-	for id := range m.nodes {
-		messageIDs = append(messageIDs, id)
-	}
-
-	// Sort by ID (older IDs are smaller)
-	for i := 0; i < len(messageIDs)-1; i++ {
-		for j := i + 1; j < len(messageIDs); j++ {
-			if messageIDs[i] > messageIDs[j] {
-				messageIDs[i], messageIDs[j] = messageIDs[j], messageIDs[i]
-			}
-		}
-	}
-
-	// Remove oldest nodes
-	toRemove := len(m.nodes) - m.maxNodes
-	for i := 0; i < toRemove; i++ {
-		delete(m.nodes, messageIDs[i])
-	}
+	m.cache.Remove(messageID)
 }
 
 // Size returns the number of cached nodes
 func (m *MsgNodeManager) Size() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return len(m.nodes)
+	return m.cache.Len()
 }
