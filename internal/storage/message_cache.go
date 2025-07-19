@@ -20,8 +20,10 @@ import (
 // ParentMsg and mutex fields are deliberately omitted.
 
 type MessageNodeCache struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db           *sql.DB
+	mu           sync.RWMutex
+	saveNodeStmt *sql.Stmt
+	getNodeStmt  *sql.Stmt
 }
 
 // msgNodeSerializable mirrors messaging.MsgNode but excludes unmarshalable fields.
@@ -52,7 +54,26 @@ func NewMessageNodeCache(dbURL string) *MessageNodeCache {
 	}
 
 	cache := &MessageNodeCache{db: db}
+	cache.prepareStatements()
 	return cache
+}
+
+func (c *MessageNodeCache) prepareStatements() {
+	var err error
+	c.saveNodeStmt, err = c.db.PrepareContext(context.Background(), `
+        INSERT INTO message_nodes (message_id, data, updated_at)
+        VALUES ($1, $2, $3)
+        ON CONFLICT(message_id) DO UPDATE SET
+            data = EXCLUDED.data,
+            updated_at = EXCLUDED.updated_at
+    `)
+	if err != nil {
+		log.Fatalf("Failed to prepare saveNodeStmt: %v", err)
+	}
+	c.getNodeStmt, err = c.db.PrepareContext(context.Background(), `SELECT data FROM message_nodes WHERE message_id = $1`)
+	if err != nil {
+		log.Fatalf("Failed to prepare getNodeStmt: %v", err)
+	}
 }
 
 // SaveNode upserts a processed node into the cache.
@@ -80,13 +101,7 @@ func (c *MessageNodeCache) SaveNode(ctx context.Context, messageID string, node 
 		return fmt.Errorf("failed to marshal node: %w", err)
 	}
 
-	_, err = c.db.ExecContext(ctx, `
-	       INSERT INTO message_nodes (message_id, data, updated_at)
-	       VALUES ($1, $2, $3)
-	       ON CONFLICT(message_id) DO UPDATE SET
-	           data = EXCLUDED.data,
-	           updated_at = EXCLUDED.updated_at
-	   `, messageID, data, time.Now().Unix())
+	_, err = c.saveNodeStmt.ExecContext(ctx, messageID, data, time.Now().Unix())
 
 	return err
 }
@@ -94,7 +109,7 @@ func (c *MessageNodeCache) SaveNode(ctx context.Context, messageID string, node 
 // GetNode retrieves a cached node. Returns (nil, nil) if not found.
 func (c *MessageNodeCache) GetNode(ctx context.Context, messageID string) (*messaging.MsgNode, error) {
 	var rawData []byte
-	err := c.db.QueryRowContext(ctx, `SELECT data FROM message_nodes WHERE message_id = $1`, messageID).Scan(&rawData)
+	err := c.getNodeStmt.QueryRowContext(ctx, messageID).Scan(&rawData)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // cache miss
@@ -124,6 +139,12 @@ func (c *MessageNodeCache) GetNode(ctx context.Context, messageID string) (*mess
 
 // Close closes the underlying DB connection.
 func (c *MessageNodeCache) Close() error {
-	// Database connection is shared, don't close it here
-	return nil
+	var err error
+	if err = c.saveNodeStmt.Close(); err != nil {
+		log.Printf("Failed to close saveNodeStmt: %v", err)
+	}
+	if err = c.getNodeStmt.Close(); err != nil {
+		log.Printf("Failed to close getNodeStmt: %v", err)
+	}
+	return err
 }
