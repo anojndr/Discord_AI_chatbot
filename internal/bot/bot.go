@@ -51,7 +51,7 @@ type Bot struct {
 // NewBot creates a new Discord bot instance
 func NewBot(cfg *config.Config) (*Bot, error) {
 	// Initialize database tables first (single connection, single transaction)
-	if err := storage.InitializeAllTables(cfg.DatabaseURL); err != nil {
+	if err := storage.InitializeAllTables(context.Background(), cfg.DatabaseURL); err != nil {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
 

@@ -501,13 +501,13 @@ func (b *Bot) handleClearDatabaseCommand(s *discordgo.Session, i *discordgo.Inte
 		return
 	}
 
-	err := storage.DropAllTables(config.DatabaseURL)
+	err := storage.DropAllTables(context.Background(), config.DatabaseURL)
 	var response string
 	if err != nil {
 		log.Printf("Failed to drop tables: %v", err)
 		response = "❌ Failed to clear the database."
 	} else {
-		err = storage.InitializeAllTables(config.DatabaseURL)
+		err = storage.InitializeAllTables(context.Background(), config.DatabaseURL)
 		if err != nil {
 			log.Printf("Failed to re-initialize tables: %v", err)
 			response = "❌ Failed to re-initialize the database."

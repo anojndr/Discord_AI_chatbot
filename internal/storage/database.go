@@ -76,13 +76,13 @@ func CloseDatabase() error {
 }
 
 // InitializeAllTables creates all required tables in a single transaction for faster startup
-func InitializeAllTables(dbURL string) error {
+func InitializeAllTables(ctx context.Context, dbURL string) error {
 	db, err := GetDatabase(dbURL)
 	if err != nil {
 		return err
 	}
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func InitializeAllTables(dbURL string) error {
 			marked_at BIGINT NOT NULL,
 			PRIMARY KEY (provider, api_key)
 		)`,
-		
+
 		// User preferences table (from user_preferences.go)
 		`CREATE TABLE IF NOT EXISTS user_preferences (
 			user_id TEXT PRIMARY KEY,
@@ -106,7 +106,7 @@ func InitializeAllTables(dbURL string) error {
 			system_prompt TEXT,
 			last_updated BIGINT NOT NULL
 		)`,
-		
+
 		// Chart libraries table (from chart_library_manager.go)
 		`CREATE TABLE IF NOT EXISTS chart_libraries (
 			name TEXT PRIMARY KEY,
@@ -116,7 +116,7 @@ func InitializeAllTables(dbURL string) error {
 			is_installed BOOLEAN NOT NULL DEFAULT false,
 			dependencies TEXT NOT NULL DEFAULT '{}'
 		)`,
-		
+
 		// Message nodes cache table (from message_cache.go)
 		`CREATE TABLE IF NOT EXISTS message_nodes (
 			message_id TEXT PRIMARY KEY,
@@ -126,7 +126,7 @@ func InitializeAllTables(dbURL string) error {
 	}
 
 	for _, table := range tables {
-		if _, err := tx.Exec(table); err != nil {
+		if _, err := tx.ExecContext(ctx, table); err != nil {
 			return err
 		}
 	}
@@ -140,7 +140,7 @@ func InitializeAllTables(dbURL string) error {
 	}
 
 	for _, index := range indexes {
-		if _, err := tx.Exec(index); err != nil {
+		if _, err := tx.ExecContext(ctx, index); err != nil {
 			return err
 		}
 	}
@@ -149,13 +149,13 @@ func InitializeAllTables(dbURL string) error {
 }
 
 // DropAllTables drops all tables from the database
-func DropAllTables(dbURL string) error {
+func DropAllTables(ctx context.Context, dbURL string) error {
 	db, err := GetDatabase(dbURL)
 	if err != nil {
 		return err
 	}
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func DropAllTables(dbURL string) error {
 	}
 
 	for _, table := range tables {
-		if _, err := tx.Exec("DROP TABLE IF EXISTS " + table + " CASCADE"); err != nil {
+		if _, err := tx.ExecContext(ctx, "DROP TABLE IF EXISTS "+table+" CASCADE"); err != nil {
 			return err
 		}
 	}
