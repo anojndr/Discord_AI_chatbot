@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -48,7 +49,7 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 		if !exists {
 			// Cache miss – try persistent cache
 			if b.messageCache != nil {
-				dbNode, err := b.messageCache.GetNode(currentMsg.ID)
+				dbNode, err := b.messageCache.GetNode(context.Background(), currentMsg.ID)
 				if err != nil {
 					log.Printf("Failed to load node from DB: %v", err)
 				}

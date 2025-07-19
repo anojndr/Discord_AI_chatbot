@@ -423,13 +423,13 @@ func (cp *ChartProcessor) installMissingLibraries(ctx context.Context, errorMsg 
 	for _, lib := range missingLibs {
 		// Check if library is already installed in database
 		if cp.libraryManager != nil {
-			isInstalled, err := cp.libraryManager.IsLibraryInstalled(lib)
+			isInstalled, err := cp.libraryManager.IsLibraryInstalled(ctx, lib)
 			if err != nil {
 				log.Printf("Failed to check if %s is installed: %v", lib, err)
 			} else if isInstalled {
 				log.Printf("Library %s is already installed according to database", lib)
 				// Update last used timestamp
-				_ = cp.libraryManager.UpdateLastUsed(lib)
+				_ = cp.libraryManager.UpdateLastUsed(ctx, lib)
 				continue
 			}
 		}
@@ -452,7 +452,7 @@ func (cp *ChartProcessor) installMissingLibraries(ctx context.Context, errorMsg 
 			log.Printf("Failed to install %s in venv: %v, stderr: %s", lib, err, stderr.String())
 			// Mark as failed installation in database
 			if cp.libraryManager != nil {
-				_ = cp.libraryManager.MarkLibraryUninstalled(lib)
+				_ = cp.libraryManager.MarkLibraryUninstalled(ctx, lib)
 			}
 			continue
 		}
@@ -461,7 +461,7 @@ func (cp *ChartProcessor) installMissingLibraries(ctx context.Context, errorMsg 
 
 		// Mark as successfully installed in database
 		if cp.libraryManager != nil {
-			if err := cp.libraryManager.MarkLibraryInstalled(lib, "latest"); err != nil {
+			if err := cp.libraryManager.MarkLibraryInstalled(ctx, lib, "latest"); err != nil {
 				log.Printf("Failed to mark %s as installed in database: %v", lib, err)
 			}
 		}
@@ -493,7 +493,10 @@ func (cp *ChartProcessor) updateLibraryUsage(code string) {
 	for library, patterns := range libraryPatterns {
 		for _, pattern := range patterns {
 			if strings.Contains(codeLower, strings.ToLower(pattern)) {
-				if err := cp.libraryManager.UpdateLastUsed(library); err != nil {
+				// Create a new context for this operation
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := cp.libraryManager.UpdateLastUsed(ctx, library); err != nil {
 					log.Printf("Failed to update last used for %s: %v", library, err)
 				}
 				break
@@ -507,7 +510,7 @@ func (cp *ChartProcessor) GetLibraryStats() (map[string]interface{}, error) {
 	if cp.libraryManager == nil {
 		return nil, fmt.Errorf("library manager not initialized")
 	}
-	return cp.libraryManager.GetLibraryStats()
+	return cp.libraryManager.GetLibraryStats(context.Background())
 }
 
 // GetInstalledLibraries returns a list of installed chart libraries
@@ -515,7 +518,7 @@ func (cp *ChartProcessor) GetInstalledLibraries() ([]storage.ChartLibrary, error
 	if cp.libraryManager == nil {
 		return nil, fmt.Errorf("library manager not initialized")
 	}
-	return cp.libraryManager.GetInstalledLibraries()
+	return cp.libraryManager.GetInstalledLibraries(context.Background())
 }
 
 // PreinstallCommonLibraries preinstalls common chart libraries
@@ -537,7 +540,7 @@ func (cp *ChartProcessor) PreinstallCommonLibraries(ctx context.Context) error {
 	for _, lib := range commonLibs {
 		// Check if already installed in database
 		if cp.libraryManager != nil {
-			isInstalled, err := cp.libraryManager.IsLibraryInstalled(lib)
+			isInstalled, err := cp.libraryManager.IsLibraryInstalled(ctx, lib)
 			if err != nil {
 				log.Printf("Failed to check if %s is installed: %v", lib, err)
 			} else if isInstalled {
@@ -569,7 +572,7 @@ func (cp *ChartProcessor) PreinstallCommonLibraries(ctx context.Context) error {
 
 		// Mark as installed in database
 		if cp.libraryManager != nil {
-			if err := cp.libraryManager.MarkLibraryInstalled(lib, "latest"); err != nil {
+			if err := cp.libraryManager.MarkLibraryInstalled(ctx, lib, "latest"); err != nil {
 				log.Printf("Failed to mark %s as installed in database: %v", lib, err)
 			}
 		}

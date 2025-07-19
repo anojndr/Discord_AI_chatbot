@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -55,7 +56,7 @@ func NewMessageNodeCache(dbURL string) *MessageNodeCache {
 }
 
 // SaveNode upserts a processed node into the cache.
-func (c *MessageNodeCache) SaveNode(messageID string, node *messaging.MsgNode) error {
+func (c *MessageNodeCache) SaveNode(ctx context.Context, messageID string, node *messaging.MsgNode) error {
 	if node == nil || messageID == "" {
 		return nil
 	}
@@ -79,21 +80,21 @@ func (c *MessageNodeCache) SaveNode(messageID string, node *messaging.MsgNode) e
 		return fmt.Errorf("failed to marshal node: %w", err)
 	}
 
-	_, err = c.db.Exec(`
-        INSERT INTO message_nodes (message_id, data, updated_at)
-        VALUES ($1, $2, $3)
-        ON CONFLICT(message_id) DO UPDATE SET
-            data = EXCLUDED.data,
-            updated_at = EXCLUDED.updated_at
-    `, messageID, data, time.Now().Unix())
+	_, err = c.db.ExecContext(ctx, `
+	       INSERT INTO message_nodes (message_id, data, updated_at)
+	       VALUES ($1, $2, $3)
+	       ON CONFLICT(message_id) DO UPDATE SET
+	           data = EXCLUDED.data,
+	           updated_at = EXCLUDED.updated_at
+	   `, messageID, data, time.Now().Unix())
 
 	return err
 }
 
 // GetNode retrieves a cached node. Returns (nil, nil) if not found.
-func (c *MessageNodeCache) GetNode(messageID string) (*messaging.MsgNode, error) {
+func (c *MessageNodeCache) GetNode(ctx context.Context, messageID string) (*messaging.MsgNode, error) {
 	var rawData []byte
-	err := c.db.QueryRow(`SELECT data FROM message_nodes WHERE message_id = $1`, messageID).Scan(&rawData)
+	err := c.db.QueryRowContext(ctx, `SELECT data FROM message_nodes WHERE message_id = $1`, messageID).Scan(&rawData)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // cache miss

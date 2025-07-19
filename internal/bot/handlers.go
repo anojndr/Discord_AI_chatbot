@@ -365,7 +365,7 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	b.mu.Unlock()
 
 	// Get user's preferred model
-	currentModel := b.userPrefs.GetUserModel(m.Author.ID, cfg.GetDefaultModel())
+	currentModel := b.userPrefs.GetUserModel(context.Background(), m.Author.ID, cfg.GetDefaultModel())
 
 	// Parse provider and model
 	parts := strings.SplitN(currentModel, "/", 2)
@@ -396,7 +396,7 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	messages, warnings := b.buildConversationChainWithWebSearch(s, m, acceptImages, acceptUsernames, true, progressMgr)
 
 	// Get user's custom system prompt or fall back to default
-	userSystemPrompt := b.userPrefs.GetUserSystemPrompt(m.Author.ID)
+	userSystemPrompt := b.userPrefs.GetUserSystemPrompt(context.Background(), m.Author.ID)
 	systemPrompt := cfg.SystemPrompt
 	if userSystemPrompt != "" {
 		systemPrompt = userSystemPrompt

@@ -248,7 +248,7 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 		maxRetries := len(availableKeys)
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			// Get next API key
-			apiKey, err := g.apiKeyManager.GetNextAPIKey(providerName, availableKeys)
+			apiKey, err := g.apiKeyManager.GetNextAPIKey(ctx, providerName, availableKeys)
 			if err != nil {
 				responseChan <- StreamResponse{Error: fmt.Errorf("failed to get API key: %w", err)}
 				return
@@ -284,7 +284,7 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 			if err != nil {
 				if isAPIKeyError(err) {
 					// Mark this key as bad and try the next one
-					markErr := g.apiKeyManager.MarkKeyAsBad(providerName, apiKey, err.Error())
+					markErr := g.apiKeyManager.MarkKeyAsBad(ctx, providerName, apiKey, err.Error())
 					if markErr != nil {
 						log.Printf("Failed to mark API key as bad: %v", markErr)
 					}
@@ -392,7 +392,7 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 
 					if isAPIKeyError(err) {
 						// Mark this key as bad and try the next one
-						markErr := g.apiKeyManager.MarkKeyAsBad(providerName, apiKey, err.Error())
+						markErr := g.apiKeyManager.MarkKeyAsBad(ctx, providerName, apiKey, err.Error())
 						if markErr != nil {
 							log.Printf("Failed to mark API key as bad: %v", markErr)
 						}
@@ -489,7 +489,7 @@ func (g *GeminiProvider) GenerateVideo(ctx context.Context, model string, prompt
 
 	maxRetries := len(availableKeys)
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		apiKey, err := g.apiKeyManager.GetNextAPIKey(providerName, availableKeys)
+		apiKey, err := g.apiKeyManager.GetNextAPIKey(ctx, providerName, availableKeys)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get API key: %w", err)
 		}
@@ -521,7 +521,7 @@ func (g *GeminiProvider) GenerateVideo(ctx context.Context, model string, prompt
 
 		if err != nil {
 			if isAPIKeyError(err) {
-				if err := g.apiKeyManager.MarkKeyAsBad(providerName, apiKey, err.Error()); err != nil {
+				if err := g.apiKeyManager.MarkKeyAsBad(ctx, providerName, apiKey, err.Error()); err != nil {
 					log.Printf("Failed to mark API key as bad: %v", err)
 				}
 				log.Printf("API key issue detected, trying next key: %v", err)

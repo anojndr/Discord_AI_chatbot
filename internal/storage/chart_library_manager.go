@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -46,13 +47,13 @@ func NewChartLibraryManager(dbURL string) *ChartLibraryManager {
 }
 
 // GetLibrary retrieves a chart library by name
-func (clm *ChartLibraryManager) GetLibrary(name string) (*ChartLibrary, error) {
+func (clm *ChartLibraryManager) GetLibrary(ctx context.Context, name string) (*ChartLibrary, error) {
 	clm.mu.RLock()
 	defer clm.mu.RUnlock()
 
 	var library ChartLibrary
-	err := clm.db.QueryRow(`
-		SELECT name, version, install_date, last_used, is_installed, dependencies 
+	err := clm.db.QueryRowContext(ctx, `
+		SELECT name, version, install_date, last_used, is_installed, dependencies
 		FROM chart_libraries WHERE name = $1
 	`, name).Scan(
 		&library.Name,
@@ -74,12 +75,12 @@ func (clm *ChartLibraryManager) GetLibrary(name string) (*ChartLibrary, error) {
 }
 
 // GetAllLibraries retrieves all chart libraries
-func (clm *ChartLibraryManager) GetAllLibraries() ([]ChartLibrary, error) {
+func (clm *ChartLibraryManager) GetAllLibraries(ctx context.Context) ([]ChartLibrary, error) {
 	clm.mu.RLock()
 	defer clm.mu.RUnlock()
 
-	rows, err := clm.db.Query(`
-		SELECT name, version, install_date, last_used, is_installed, dependencies 
+	rows, err := clm.db.QueryContext(ctx, `
+		SELECT name, version, install_date, last_used, is_installed, dependencies
 		FROM chart_libraries ORDER BY name
 	`)
 	if err != nil {
@@ -107,12 +108,12 @@ func (clm *ChartLibraryManager) GetAllLibraries() ([]ChartLibrary, error) {
 }
 
 // GetInstalledLibraries retrieves all installed chart libraries
-func (clm *ChartLibraryManager) GetInstalledLibraries() ([]ChartLibrary, error) {
+func (clm *ChartLibraryManager) GetInstalledLibraries(ctx context.Context) ([]ChartLibrary, error) {
 	clm.mu.RLock()
 	defer clm.mu.RUnlock()
 
-	rows, err := clm.db.Query(`
-		SELECT name, version, install_date, last_used, is_installed, dependencies 
+	rows, err := clm.db.QueryContext(ctx, `
+		SELECT name, version, install_date, last_used, is_installed, dependencies
 		FROM chart_libraries WHERE is_installed = true ORDER BY name
 	`)
 	if err != nil {
@@ -140,12 +141,12 @@ func (clm *ChartLibraryManager) GetInstalledLibraries() ([]ChartLibrary, error) 
 }
 
 // AddLibrary adds or updates a chart library
-func (clm *ChartLibraryManager) AddLibrary(library *ChartLibrary) error {
+func (clm *ChartLibraryManager) AddLibrary(ctx context.Context, library *ChartLibrary) error {
 	clm.mu.Lock()
 	defer clm.mu.Unlock()
 
 	// Use UPSERT to handle both new and existing libraries
-	_, err := clm.db.Exec(`
+	_, err := clm.db.ExecContext(ctx, `
 		INSERT INTO chart_libraries (name, version, install_date, last_used, is_installed, dependencies)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT(name) DO UPDATE SET
@@ -164,12 +165,12 @@ func (clm *ChartLibraryManager) AddLibrary(library *ChartLibrary) error {
 }
 
 // MarkLibraryInstalled marks a library as installed
-func (clm *ChartLibraryManager) MarkLibraryInstalled(name, version string) error {
+func (clm *ChartLibraryManager) MarkLibraryInstalled(ctx context.Context, name, version string) error {
 	clm.mu.Lock()
 	defer clm.mu.Unlock()
 
 	now := time.Now().Unix()
-	_, err := clm.db.Exec(`
+	_, err := clm.db.ExecContext(ctx, `
 		INSERT INTO chart_libraries (name, version, install_date, last_used, is_installed, dependencies)
 		VALUES ($1, $2, $3, $4, true, '{}')
 		ON CONFLICT(name) DO UPDATE SET
@@ -187,13 +188,13 @@ func (clm *ChartLibraryManager) MarkLibraryInstalled(name, version string) error
 }
 
 // MarkLibraryUninstalled marks a library as uninstalled
-func (clm *ChartLibraryManager) MarkLibraryUninstalled(name string) error {
+func (clm *ChartLibraryManager) MarkLibraryUninstalled(ctx context.Context, name string) error {
 	clm.mu.Lock()
 	defer clm.mu.Unlock()
 
-	_, err := clm.db.Exec(`
-		UPDATE chart_libraries 
-		SET is_installed = false, last_used = $1 
+	_, err := clm.db.ExecContext(ctx, `
+		UPDATE chart_libraries
+		SET is_installed = false, last_used = $1
 		WHERE name = $2
 	`, time.Now().Unix(), name)
 
@@ -205,13 +206,13 @@ func (clm *ChartLibraryManager) MarkLibraryUninstalled(name string) error {
 }
 
 // UpdateLastUsed updates the last used timestamp for a library
-func (clm *ChartLibraryManager) UpdateLastUsed(name string) error {
+func (clm *ChartLibraryManager) UpdateLastUsed(ctx context.Context, name string) error {
 	clm.mu.Lock()
 	defer clm.mu.Unlock()
 
-	_, err := clm.db.Exec(`
-		UPDATE chart_libraries 
-		SET last_used = $1 
+	_, err := clm.db.ExecContext(ctx, `
+		UPDATE chart_libraries
+		SET last_used = $1
 		WHERE name = $2
 	`, time.Now().Unix(), name)
 
@@ -223,12 +224,12 @@ func (clm *ChartLibraryManager) UpdateLastUsed(name string) error {
 }
 
 // IsLibraryInstalled checks if a library is marked as installed
-func (clm *ChartLibraryManager) IsLibraryInstalled(name string) (bool, error) {
+func (clm *ChartLibraryManager) IsLibraryInstalled(ctx context.Context, name string) (bool, error) {
 	clm.mu.RLock()
 	defer clm.mu.RUnlock()
 
 	var isInstalled bool
-	err := clm.db.QueryRow(`
+	err := clm.db.QueryRowContext(ctx, `
 		SELECT is_installed FROM chart_libraries WHERE name = $1
 	`, name).Scan(&isInstalled)
 
@@ -243,11 +244,11 @@ func (clm *ChartLibraryManager) IsLibraryInstalled(name string) (bool, error) {
 }
 
 // RemoveLibrary removes a library from the database
-func (clm *ChartLibraryManager) RemoveLibrary(name string) error {
+func (clm *ChartLibraryManager) RemoveLibrary(ctx context.Context, name string) error {
 	clm.mu.Lock()
 	defer clm.mu.Unlock()
 
-	_, err := clm.db.Exec(`DELETE FROM chart_libraries WHERE name = $1`, name)
+	_, err := clm.db.ExecContext(ctx, `DELETE FROM chart_libraries WHERE name = $1`, name)
 	if err != nil {
 		return fmt.Errorf("failed to remove library: %w", err)
 	}
@@ -256,7 +257,7 @@ func (clm *ChartLibraryManager) RemoveLibrary(name string) error {
 }
 
 // GetLibraryStats returns statistics about chart libraries
-func (clm *ChartLibraryManager) GetLibraryStats() (map[string]interface{}, error) {
+func (clm *ChartLibraryManager) GetLibraryStats(ctx context.Context) (map[string]interface{}, error) {
 	clm.mu.RLock()
 	defer clm.mu.RUnlock()
 
@@ -264,8 +265,8 @@ func (clm *ChartLibraryManager) GetLibraryStats() (map[string]interface{}, error
 	var mostRecentInstall, oldestInstall int64
 
 	// Get total and installed counts
-	err := clm.db.QueryRow(`
-		SELECT 
+	err := clm.db.QueryRowContext(ctx, `
+		SELECT
 			COUNT(*) as total,
 			COUNT(CASE WHEN is_installed = true THEN 1 END) as installed
 		FROM chart_libraries
@@ -276,8 +277,8 @@ func (clm *ChartLibraryManager) GetLibraryStats() (map[string]interface{}, error
 	}
 
 	// Get install date range
-	err = clm.db.QueryRow(`
-		SELECT 
+	err = clm.db.QueryRowContext(ctx, `
+		SELECT
 			COALESCE(MAX(install_date), 0) as most_recent,
 			COALESCE(MIN(install_date), 0) as oldest
 		FROM chart_libraries WHERE is_installed = true

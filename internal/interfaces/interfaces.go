@@ -75,19 +75,19 @@ type PermissionChecker interface {
 // UserPreferences defines the interface for user preference management
 type UserPreferences interface {
 	// GetUserModel returns the user's preferred model
-	GetUserModel(userID, defaultModel string) string
+	GetUserModel(ctx context.Context, userID, defaultModel string) string
 
 	// SetUserModel sets the user's preferred model
-	SetUserModel(userID, model string) error
+	SetUserModel(ctx context.Context, userID, model string) error
 
 	// GetUserSystemPrompt gets the custom system prompt for a user
-	GetUserSystemPrompt(userID string) string
+	GetUserSystemPrompt(ctx context.Context, userID string) string
 
 	// SetUserSystemPrompt sets the custom system prompt for a user
-	SetUserSystemPrompt(userID, prompt string) error
+	SetUserSystemPrompt(ctx context.Context, userID, prompt string) error
 
 	// ClearUserSystemPrompt clears the custom system prompt for a user
-	ClearUserSystemPrompt(userID string) error
+	ClearUserSystemPrompt(ctx context.Context, userID string) error
 
 	// Close closes the database connection
 	Close() error

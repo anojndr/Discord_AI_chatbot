@@ -210,7 +210,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 	// --- Web Search Decision and Execution ---
 	if isCurrentMessage && !isGoogleLensQuery && !isAskChannelQuery {
-		userModel := b.userPrefs.GetUserModel(msg.Author.ID, "")
+		userModel := b.userPrefs.GetUserModel(context.Background(), msg.Author.ID, "")
 		if userModel == "gemini/gemini-2.0-flash-preview-image-generation" {
 			log.Printf("Skipping web search for image generation model: %s", userModel)
 			node.SetWebSearchInfo(false, 0)
@@ -219,7 +219,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			b.mu.RLock()
 			cfg := b.config
 			b.mu.RUnlock()
-			userSystemPrompt := b.userPrefs.GetUserSystemPrompt(msg.Author.ID)
+			userSystemPrompt := b.userPrefs.GetUserSystemPrompt(context.Background(), msg.Author.ID)
 			systemPrompt := cfg.SystemPrompt
 			if userSystemPrompt != "" {
 				systemPrompt = userSystemPrompt
@@ -276,7 +276,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 	// Persist the processed node
 	if b.messageCache != nil {
-		if err := b.messageCache.SaveNode(msg.ID, node); err != nil {
+		if err := b.messageCache.SaveNode(context.Background(), msg.ID, node); err != nil {
 			log.Printf("Failed to save message node to cache: %v", err)
 		}
 	}
@@ -423,7 +423,7 @@ func (b *Bot) handleAskChannelQuery(ctx context.Context, s *discordgo.Session, m
 	cfg := b.config
 	b.mu.RUnlock()
 
-	userModel := b.userPrefs.GetUserModel(msg.Author.ID, cfg.GetDefaultModel())
+	userModel := b.userPrefs.GetUserModel(context.Background(), msg.Author.ID, cfg.GetDefaultModel())
 	modelTokenLimit := cfg.GetModelTokenLimit(userModel)
 	tokenThreshold := cfg.GetChannelTokenThreshold()
 

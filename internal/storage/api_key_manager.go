@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -38,7 +39,7 @@ func NewAPIKeyManager(dbURL string) *APIKeyManager {
 }
 
 // GetNextAPIKey returns the next available API key for a provider
-func (akm *APIKeyManager) GetNextAPIKey(provider string, availableKeys []string) (string, error) {
+func (akm *APIKeyManager) GetNextAPIKey(ctx context.Context, provider string, availableKeys []string) (string, error) {
 	if len(availableKeys) == 0 {
 		return "", fmt.Errorf("no API keys available for provider %s", provider)
 	}
@@ -47,7 +48,7 @@ func (akm *APIKeyManager) GetNextAPIKey(provider string, availableKeys []string)
 	defer akm.mu.Unlock()
 
 	// Get bad keys for this provider
-	badKeys, err := akm.getBadKeys(provider)
+	badKeys, err := akm.getBadKeys(ctx, provider)
 	if err != nil {
 		return "", fmt.Errorf("failed to get bad keys: %w", err)
 	}
@@ -63,7 +64,7 @@ func (akm *APIKeyManager) GetNextAPIKey(provider string, availableKeys []string)
 	// If all keys are bad, reset the bad keys and try again
 	if len(goodKeys) == 0 {
 		log.Printf("All API keys for provider %s are marked as bad, resetting...", provider)
-		if err := akm.resetBadKeys(provider); err != nil {
+		if err := akm.resetBadKeys(ctx, provider); err != nil {
 			return "", fmt.Errorf("failed to reset bad keys: %w", err)
 		}
 		goodKeys = availableKeys
@@ -86,15 +87,15 @@ func (akm *APIKeyManager) GetNextAPIKey(provider string, availableKeys []string)
 }
 
 // MarkKeyAsBad marks an API key as bad so it won't be used again
-func (akm *APIKeyManager) MarkKeyAsBad(provider, apiKey string, reason string) error {
+func (akm *APIKeyManager) MarkKeyAsBad(ctx context.Context, provider, apiKey string, reason string) error {
 	akm.mu.Lock()
 	defer akm.mu.Unlock()
 
-	_, err := akm.db.Exec(`
-		INSERT INTO bad_api_keys 
-		(provider, api_key, reason, marked_at) 
+	_, err := akm.db.ExecContext(ctx, `
+		INSERT INTO bad_api_keys
+		(provider, api_key, reason, marked_at)
 		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (provider, api_key) DO UPDATE SET 
+		ON CONFLICT (provider, api_key) DO UPDATE SET
 			reason = EXCLUDED.reason,
 			marked_at = EXCLUDED.marked_at
 	`, provider, apiKey, reason, time.Now().Unix())
@@ -108,9 +109,9 @@ func (akm *APIKeyManager) MarkKeyAsBad(provider, apiKey string, reason string) e
 }
 
 // getBadKeys returns all bad keys for a provider
-func (akm *APIKeyManager) getBadKeys(provider string) ([]string, error) {
-	rows, err := akm.db.Query(`
-		SELECT api_key FROM bad_api_keys 
+func (akm *APIKeyManager) getBadKeys(ctx context.Context, provider string) ([]string, error) {
+	rows, err := akm.db.QueryContext(ctx, `
+		SELECT api_key FROM bad_api_keys
 		WHERE provider = $1
 	`, provider)
 	if err != nil {
@@ -135,19 +136,19 @@ func (akm *APIKeyManager) getBadKeys(provider string) ([]string, error) {
 }
 
 // resetBadKeys removes all bad key entries for a provider
-func (akm *APIKeyManager) resetBadKeys(provider string) error {
-	_, err := akm.db.Exec(`
+func (akm *APIKeyManager) resetBadKeys(ctx context.Context, provider string) error {
+	_, err := akm.db.ExecContext(ctx, `
 		DELETE FROM bad_api_keys WHERE provider = $1
 	`, provider)
 	return err
 }
 
 // ResetBadKeys is a public method to reset bad keys for a provider
-func (akm *APIKeyManager) ResetBadKeys(provider string) error {
+func (akm *APIKeyManager) ResetBadKeys(ctx context.Context, provider string) error {
 	akm.mu.Lock()
 	defer akm.mu.Unlock()
 
-	err := akm.resetBadKeys(provider)
+	err := akm.resetBadKeys(ctx, provider)
 	if err != nil {
 		return fmt.Errorf("failed to reset bad keys for provider %s: %w", provider, err)
 	}
@@ -161,13 +162,13 @@ func (akm *APIKeyManager) ResetBadKeys(provider string) error {
 
 
 // GetBadKeyStats returns statistics about bad keys for monitoring
-func (akm *APIKeyManager) GetBadKeyStats() (map[string]int, error) {
+func (akm *APIKeyManager) GetBadKeyStats(ctx context.Context) (map[string]int, error) {
 	akm.mu.RLock()
 	defer akm.mu.RUnlock()
 
-	rows, err := akm.db.Query(`
-		SELECT provider, COUNT(*) as count 
-		FROM bad_api_keys 
+	rows, err := akm.db.QueryContext(ctx, `
+		SELECT provider, COUNT(*) as count
+		FROM bad_api_keys
 		GROUP BY provider
 	`)
 	if err != nil {

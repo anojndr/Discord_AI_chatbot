@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/golang-lru/v2"
 	openai "github.com/sashabaranov/go-openai"
 
 	"DiscordAIChatbot/internal/config"
@@ -31,7 +32,7 @@ type LLMClient struct {
 	config         *config.Config
 	apiKeyManager  *storage.APIKeyManager
 	geminiProvider *providers.GeminiProvider
-	imageCache     map[string]*ImageCacheEntry
+	imageCache     *lru.Cache[string, *ImageCacheEntry]
 	imageCacheMu   sync.RWMutex
 }
 
@@ -41,11 +42,17 @@ type Client = LLMClient
 // NewLLMClient creates a new LLM client
 func NewLLMClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager) *LLMClient {
 	logging.LogToFile("Initializing LLM client")
+	// Initialize LRU cache with a size of 1000
+	imageCache, err := lru.New[string, *ImageCacheEntry](1000)
+	if err != nil {
+		log.Fatalf("Failed to create image cache: %v", err)
+	}
+
 	return &LLMClient{
 		config:         cfg,
 		apiKeyManager:  apiKeyManager,
 		geminiProvider: providers.NewGeminiProvider(cfg, apiKeyManager),
-		imageCache:     make(map[string]*ImageCacheEntry),
+		imageCache:     imageCache,
 	}
 }
 
@@ -211,7 +218,7 @@ func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string
 	maxRetries := len(availableKeys)
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		// Get next API key
-		apiKey, err := c.apiKeyManager.GetNextAPIKey(providerName, availableKeys)
+		apiKey, err := c.apiKeyManager.GetNextAPIKey(ctx, providerName, availableKeys)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get API key: %w", err)
 		}
@@ -238,7 +245,7 @@ func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string
 			// Check if this is an API key related error
 			if c.isAPIKeyError(err) {
 				// Mark this key as bad and try the next one
-				markErr := c.apiKeyManager.MarkKeyAsBad(providerName, apiKey, err.Error())
+				markErr := c.apiKeyManager.MarkKeyAsBad(ctx, providerName, apiKey, err.Error())
 				if markErr != nil {
 					// Log the error but continue with the retry
 					fmt.Printf("Failed to mark API key as bad: %v\n", markErr)

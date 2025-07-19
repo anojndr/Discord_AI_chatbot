@@ -668,7 +668,7 @@ processStream:
 
 			// Persist the fully populated response node to the database cache so we don't re-process it after restart.
 			if b.messageCache != nil {
-				if err := b.messageCache.SaveNode(responseMsg.ID, node); err != nil {
+				if err := b.messageCache.SaveNode(context.Background(), responseMsg.ID, node); err != nil {
 					log.Printf("Failed to save response node to cache: %v", err)
 				}
 			}

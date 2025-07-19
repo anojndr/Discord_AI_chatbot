@@ -64,7 +64,7 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 	// Get user's current model
 	var currentModel string
 	if userID != "" && b.userPrefs != nil {
-		currentModel = b.userPrefs.GetUserModel(userID, config.GetDefaultModel())
+		currentModel = b.userPrefs.GetUserModel(context.Background(), userID, config.GetDefaultModel())
 	} else {
 		currentModel = config.GetDefaultModel()
 	}
@@ -93,7 +93,7 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 		if userID == "" || b.userPrefs == nil {
 			response = "❌ Unable to save model preference (user ID not available)"
 		} else {
-			err := b.userPrefs.SetUserModel(userID, newModel)
+			err := b.userPrefs.SetUserModel(context.Background(), userID, newModel)
 			if err != nil {
 				log.Printf("Failed to save user model preference: %v", err)
 				response = "❌ Failed to save model preference"
@@ -147,7 +147,7 @@ func (b *Bot) handleSystemPromptCommand(s *discordgo.Session, i *discordgo.Inter
 	case "view":
 		var currentPrompt string
 		if userID != "" && b.userPrefs != nil {
-			currentPrompt = b.userPrefs.GetUserSystemPrompt(userID)
+			currentPrompt = b.userPrefs.GetUserSystemPrompt(context.Background(), userID)
 		}
 		if currentPrompt == "" {
 			response = "You don't have a custom system prompt set. Using the default system prompt."
@@ -175,7 +175,7 @@ func (b *Bot) handleSystemPromptCommand(s *discordgo.Session, i *discordgo.Inter
 		if userID == "" || b.userPrefs == nil {
 			response = "❌ Unable to save system prompt (user ID not available)"
 		} else {
-			err := b.userPrefs.SetUserSystemPrompt(userID, newPrompt)
+			err := b.userPrefs.SetUserSystemPrompt(context.Background(), userID, newPrompt)
 			if err != nil {
 				log.Printf("Failed to save user system prompt: %v", err)
 				response = "❌ Failed to save system prompt"
@@ -189,7 +189,7 @@ func (b *Bot) handleSystemPromptCommand(s *discordgo.Session, i *discordgo.Inter
 		if userID == "" || b.userPrefs == nil {
 			response = "❌ Unable to clear system prompt (user ID not available)"
 		} else {
-			err := b.userPrefs.ClearUserSystemPrompt(userID)
+			err := b.userPrefs.ClearUserSystemPrompt(context.Background(), userID)
 			if err != nil {
 				log.Printf("Failed to clear user system prompt: %v", err)
 				response = "❌ Failed to clear system prompt"
@@ -269,7 +269,7 @@ func (b *Bot) handleAPIKeysCommand(s *discordgo.Session, i *discordgo.Interactio
 	switch action {
 	case "status":
 		// Get bad key statistics
-		stats, err := b.apiKeyManager.GetBadKeyStats()
+		stats, err := b.apiKeyManager.GetBadKeyStats(context.Background())
 		if err != nil {
 			log.Printf("Failed to get API key stats: %v", err)
 			response = "❌ Failed to get API key statistics"
@@ -319,7 +319,7 @@ func (b *Bot) handleAPIKeysCommand(s *discordgo.Session, i *discordgo.Interactio
 		}
 
 		// Reset bad keys for the provider
-		err := b.apiKeyManager.ResetBadKeys(provider)
+		err := b.apiKeyManager.ResetBadKeys(context.Background(), provider)
 		if err != nil {
 			log.Printf("Failed to reset bad keys for provider %s: %v", provider, err)
 			response = fmt.Sprintf("❌ Failed to reset bad keys for provider: %s", provider)
@@ -402,7 +402,7 @@ func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.Interac
 
 	var currentModel string
 	if userID != "" && b.userPrefs != nil {
-		currentModel = b.userPrefs.GetUserModel(userID, config.GetDefaultModel())
+		currentModel = b.userPrefs.GetUserModel(context.Background(), userID, config.GetDefaultModel())
 	} else {
 		currentModel = config.GetDefaultModel()
 	}

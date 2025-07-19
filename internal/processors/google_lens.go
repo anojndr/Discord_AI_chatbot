@@ -151,7 +151,7 @@ func (g *GoogleLensClient) Search(ctx context.Context, imageURL string, opts *Se
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		// Get next API key
-		apiKey, err := g.apiKeyManager.GetNextAPIKey("serpapi", availableKeys)
+		apiKey, err := g.apiKeyManager.GetNextAPIKey(ctx, "serpapi", availableKeys)
 		if err != nil {
 			return "", fmt.Errorf("failed to get SerpAPI key: %w", err)
 		}
@@ -170,7 +170,7 @@ func (g *GoogleLensClient) Search(ctx context.Context, imageURL string, opts *Se
 			// Check if this is an API key related error
 			if g.isSerpAPIKeyError(err) {
 				// Mark this key as bad and try the next one
-				markErr := g.apiKeyManager.MarkKeyAsBad("serpapi", apiKey, err.Error())
+				markErr := g.apiKeyManager.MarkKeyAsBad(ctx, "serpapi", apiKey, err.Error())
 				if markErr != nil {
 					// Log the error but continue with the retry
 					fmt.Printf("Failed to mark SerpAPI key as bad: %v\n", markErr)

@@ -22,7 +22,7 @@ func (c *LLMClient) downloadImageFromURL(ctx context.Context, imageURL string) (
 
 	// Check cache first (especially important for data URLs)
 	c.imageCacheMu.RLock()
-	if entry, exists := c.imageCache[cacheKey]; exists {
+	if entry, exists := c.imageCache.Get(cacheKey); exists {
 		c.imageCacheMu.RUnlock()
 		return entry.Data, entry.MIMEType, nil
 	}
@@ -46,23 +46,10 @@ func (c *LLMClient) downloadImageFromURL(ctx context.Context, imageURL string) (
 
 	// Cache the result
 	c.imageCacheMu.Lock()
-	// Simple cache size management - limit to 1000 entries
-	if len(c.imageCache) >= 1000 {
-		// Remove oldest entries (simple approach - clear half the cache)
-		newCache := make(map[string]*ImageCacheEntry)
-		count := 0
-		for k, v := range c.imageCache {
-			if count < 500 {
-				newCache[k] = v
-				count++
-			}
-		}
-		c.imageCache = newCache
-	}
-	c.imageCache[cacheKey] = &ImageCacheEntry{
+	c.imageCache.Add(cacheKey, &ImageCacheEntry{
 		Data:     imageData,
 		MIMEType: mimeType,
-	}
+	})
 	c.imageCacheMu.Unlock()
 
 	return imageData, mimeType, nil
