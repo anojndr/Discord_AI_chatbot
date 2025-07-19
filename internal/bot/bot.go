@@ -137,8 +137,12 @@ func (b *Bot) Start() error {
 	// Preinstall common chart libraries in background (only when chart generation is used)
 	go func() {
 		defer b.activeGoroutines.Done()
-		// Chart libraries will be installed lazily when first needed
-		log.Printf("Chart processor initialized with lazy loading")
+		log.Printf("Preinstalling common chart libraries in the background...")
+		if err := b.chartProcessor.PreinstallCommonLibraries(b.shutdownCtx); err != nil {
+			log.Printf("⚠️ Failed to preinstall common chart libraries: %v", err)
+		} else {
+			log.Printf("✅ Common chart libraries preinstalled successfully.")
+		}
 	}()
 
 	return b.session.Open()

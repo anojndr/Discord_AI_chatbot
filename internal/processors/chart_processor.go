@@ -266,59 +266,53 @@ func (cp *ChartProcessor) executeChartCode(ctx context.Context, code string, fil
 	// Modify the code to save the chart instead of showing it
 	modifiedCode := cp.modifyCodeForSaving(code, filename)
 
-	// Create temporary Python file
-	tempFile := filepath.Join(cp.tempDir, fmt.Sprintf("chart_%d.py", time.Now().UnixNano()))
-	defer func() { _ = os.Remove(tempFile) }()
+	// Function to run the python script from stdin
+	runScript := func() error {
+		pythonPath := cp.getPythonExecutablePath()
+		cmd := exec.CommandContext(ctx, pythonPath)
+		cmd.Dir = cp.tempDir
+		cmd.Stdin = strings.NewReader(modifiedCode)
 
-	// Write the modified code to temporary file
-	if err := os.WriteFile(tempFile, []byte(modifiedCode), 0644); err != nil {
-		return nil, fmt.Errorf("failed to write temporary Python file: %w", err)
-	}
-
-	// Execute the Python code using virtual environment
-	pythonPath := cp.getPythonExecutablePath()
-	cmd := exec.CommandContext(ctx, pythonPath, tempFile)
-	cmd.Dir = cp.tempDir
-
-	// Set environment variables for cross-platform compatibility
-	env := os.Environ()
-	if runtime.GOOS == "windows" {
-		// On Windows, ensure proper encoding for matplotlib
-		env = append(env, "PYTHONIOENCODING=utf-8")
-	}
-	// Set matplotlib backend for all platforms
-	env = append(env, "MPLBACKEND=Agg")
-	cmd.Env = env
-
-	// Capture output for debugging
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		// Try to install missing libraries and retry
-		if strings.Contains(stderr.String(), "ModuleNotFoundError") || strings.Contains(stderr.String(), "ImportError") {
-			log.Printf("Installing missing Python libraries...")
-			if installErr := cp.installMissingLibraries(ctx, stderr.String()); installErr != nil {
-				log.Printf("Failed to install libraries: %v", installErr)
-			} else {
-				// Retry execution after installing libraries
-				pythonPath := cp.getPythonExecutablePath()
-				cmd = exec.CommandContext(ctx, pythonPath, tempFile)
-				cmd.Dir = cp.tempDir
-				cmd.Env = env
-				stderr.Reset()
-				stdout.Reset()
-				cmd.Stdout = &stdout
-				cmd.Stderr = &stderr
-
-				if retryErr := cmd.Run(); retryErr != nil {
-					return nil, fmt.Errorf("failed to execute Python code after installing libraries: %w, stderr: %s", retryErr, stderr.String())
-				}
-			}
-		} else {
-			return nil, fmt.Errorf("failed to execute Python code: %w, stderr: %s", err, stderr.String())
+		// Set environment variables for cross-platform compatibility
+		env := os.Environ()
+		if runtime.GOOS == "windows" {
+			env = append(env, "PYTHONIOENCODING=utf-8")
 		}
+		env = append(env, "MPLBACKEND=Agg")
+		cmd.Env = env
+
+		// Capture output for debugging
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			// Try to install missing libraries and retry
+			if strings.Contains(stderr.String(), "ModuleNotFoundError") || strings.Contains(stderr.String(), "ImportError") {
+				log.Printf("Installing missing Python libraries based on error: %s", stderr.String())
+				if installErr := cp.installMissingLibraries(ctx, stderr.String()); installErr != nil {
+					return fmt.Errorf("failed to install missing libraries: %w", installErr)
+				}
+				// After installing, we return a special error to signal a retry
+				return &errRetry{}
+			}
+			return fmt.Errorf("failed to execute Python code: %w, stderr: %s", err, stderr.String())
+		}
+		return nil
+	}
+
+	// Execute the script, with a retry mechanism
+	err := runScript()
+	if _, ok := err.(*errRetry); ok {
+		log.Printf("Retrying script execution after library installation...")
+		err = runScript()
+	}
+
+	if err != nil {
+		// If it's still a retry error, it means installation succeeded but the script failed again.
+		if _, ok := err.(*errRetry); ok {
+			return nil, fmt.Errorf("script failed after retrying post-installation")
+		}
+		return nil, err
 	}
 
 	// Read the generated image file
@@ -331,6 +325,13 @@ func (cp *ChartProcessor) executeChartCode(ctx context.Context, code string, fil
 	}
 
 	return imageData, nil
+}
+
+// errRetry is a special error type to signal a retry attempt
+type errRetry struct{}
+
+func (e *errRetry) Error() string {
+	return "retry script execution"
 }
 
 // modifyCodeForSaving modifies the Python code to save the chart instead of showing it
