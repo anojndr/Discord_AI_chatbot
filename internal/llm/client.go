@@ -32,6 +32,8 @@ type LLMClient struct {
 	config         *config.Config
 	apiKeyManager  *storage.APIKeyManager
 	geminiProvider *providers.GeminiProvider
+	openAIClients  map[string]*openai.Client
+	clientMapMutex sync.RWMutex
 	imageCache     *lru.Cache[string, *ImageCacheEntry]
 	imageCacheMu   sync.RWMutex
 }
@@ -42,18 +44,18 @@ type Client = LLMClient
 // NewLLMClient creates a new LLM client
 func NewLLMClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager) *LLMClient {
 	logging.LogToFile("Initializing LLM client")
-	// Initialize LRU cache with a size of 1000
 	imageCache, err := lru.New[string, *ImageCacheEntry](1000)
 	if err != nil {
 		log.Fatalf("Failed to create image cache: %v", err)
 	}
-
-	return &LLMClient{
+	client := &LLMClient{
 		config:         cfg,
 		apiKeyManager:  apiKeyManager,
 		geminiProvider: providers.NewGeminiProvider(cfg, apiKeyManager),
+		openAIClients:  make(map[string]*openai.Client),
 		imageCache:     imageCache,
 	}
+	return client
 }
 
 // isGeminiModel checks if the given model uses the Gemini provider
@@ -109,6 +111,26 @@ func (c *LLMClient) GenerateVideo(ctx context.Context, model string, prompt stri
 	return c.geminiProvider.GenerateVideo(ctx, model, prompt, c.isAPIKeyError, c.is503Error, c.retryWith503Backoff, c.isInternalError, c.retryWithInternalBackoff)
 }
 
+// getOpenAIClient gets a client from the cache or creates a new one if it doesn't exist
+func (c *LLMClient) getOpenAIClient(providerName, baseURL, apiKey string) *openai.Client {
+	c.clientMapMutex.Lock()
+	defer c.clientMapMutex.Unlock()
+
+	// Use a combination of provider and key to cache clients
+	cacheKey := providerName + ":" + apiKey
+	if client, exists := c.openAIClients[cacheKey]; exists {
+		return client
+	}
+
+	clientConfig := openai.DefaultConfig(apiKey)
+	if baseURL != "" {
+		clientConfig.BaseURL = baseURL
+	}
+	newClient := openai.NewClientWithConfig(clientConfig)
+	c.openAIClients[cacheKey] = newClient
+	return newClient
+}
+
 // CreateChatCompletionStream creates a streaming chat completion
 func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string, messages []messaging.OpenAIMessage) (*openai.ChatCompletionStream, error) {
 	// Check if this is a Gemini model
@@ -144,7 +166,6 @@ func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string
 	}
 
 	// Convert messages to OpenAI format
-	// System messages are correctly handled as part of the messages array for OpenAI ChatCompletions API
 	openaiMessages := make([]openai.ChatCompletionMessage, len(messages))
 	for i, msg := range messages {
 		openaiMsg := openai.ChatCompletionMessage{
@@ -157,7 +178,6 @@ func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string
 		case string:
 			openaiMsg.Content = content
 		case []messaging.MessageContent:
-			// Convert to OpenAI multi-content format
 			var parts []openai.ChatMessagePart
 			for _, part := range content {
 				if part.Type == "text" {
@@ -194,20 +214,6 @@ func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string
 		req.Temperature = *modelParams.Temperature
 	}
 
-	// Handle provider-specific parameters
-	if modelParams.ReasoningEffort != "" {
-		// This would be handled differently per provider
-		// For now, we'll add it as a generic parameter
-		// TODO: Implement reasoning effort parameter handling
-		log.Printf("ReasoningEffort parameter not yet implemented: %s", modelParams.ReasoningEffort)
-	}
-
-	if len(modelParams.SearchParameters) > 0 {
-		// Handle search parameters for providers that support it
-		// TODO: Implement search parameters handling
-		log.Printf("SearchParameters not yet implemented: %v", modelParams.SearchParameters)
-	}
-
 	// Log request start
 	logging.LogToFile("Starting OpenAI-compatible LLM request: Model=%s, Provider=%s", req.Model, providerName)
 
@@ -217,18 +223,12 @@ func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string
 	// Try API keys until one works or we run out
 	maxRetries := len(availableKeys)
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		// Get next API key
 		apiKey, err := c.apiKeyManager.GetNextAPIKey(ctx, providerName, availableKeys)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get API key: %w", err)
 		}
 
-		// Create OpenAI client with current API key
-		clientConfig := openai.DefaultConfig(apiKey)
-		if provider.BaseURL != "" {
-			clientConfig.BaseURL = provider.BaseURL
-		}
-		client := openai.NewClientWithConfig(clientConfig)
+		client := c.getOpenAIClient(providerName, provider.BaseURL, apiKey)
 
 		// Try to create stream with 503 retry mechanism
 		var stream *openai.ChatCompletionStream
@@ -239,26 +239,20 @@ func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string
 		})
 
 		if err != nil {
-			// Enhanced error reporting
 			detailedErr := c.buildDetailedError(err, providerName, provider.BaseURL)
 
-			// Check if this is an API key related error
 			if c.isAPIKeyError(err) {
-				// Mark this key as bad and try the next one
 				markErr := c.apiKeyManager.MarkKeyAsBad(ctx, providerName, apiKey, err.Error())
 				if markErr != nil {
-					// Log the error but continue with the retry
 					fmt.Printf("Failed to mark API key as bad: %v\n", markErr)
 				}
 				fmt.Printf("API key issue detected, trying next key. %v\n", detailedErr)
 				continue
 			}
 
-			// For non-API key errors, return immediately with detailed error
 			return nil, fmt.Errorf("failed to create chat completion stream: %w", detailedErr)
 		}
 
-		// Success! Return the stream
 		return stream, nil
 	}
 

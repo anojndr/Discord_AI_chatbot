@@ -7,7 +7,6 @@ import (
 	"image/gif"
 	"image/png"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -255,28 +254,14 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 			}
 
 			// Create Gemini client
-			// Set API key in environment variable temporarily for this client
-			oldKey := os.Getenv("GEMINI_API_KEY")
-			if err := os.Setenv("GEMINI_API_KEY", apiKey); err != nil {
-				log.Printf("Failed to set GEMINI_API_KEY: %v", err)
-			}
-			defer func() {
-				if oldKey != "" {
-					if err := os.Setenv("GEMINI_API_KEY", oldKey); err != nil {
-						log.Printf("Failed to restore GEMINI_API_KEY: %v", err)
-					}
-				} else {
-					if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-						log.Printf("Failed to unset GEMINI_API_KEY: %v", err)
-					}
-				}
-			}()
-
 			var client *genai.Client
 			err = retryWithInternalBackoff(ctx, func() error {
 				return retryWith503Backoff(ctx, func() error {
 					var clientErr error
-					client, clientErr = genai.NewClient(ctx, nil)
+					// Pass key directly via options
+					client, clientErr = genai.NewClient(ctx, &genai.ClientConfig{
+						APIKey: apiKey,
+					})
 					return clientErr
 				})
 			})
@@ -494,27 +479,13 @@ func (g *GeminiProvider) GenerateVideo(ctx context.Context, model string, prompt
 			return nil, fmt.Errorf("failed to get API key: %w", err)
 		}
 
-		oldKey := os.Getenv("GEMINI_API_KEY")
-		if err := os.Setenv("GEMINI_API_KEY", apiKey); err != nil {
-			log.Printf("Failed to set GEMINI_API_KEY: %v", err)
-		}
-		defer func() {
-			if oldKey != "" {
-				if err := os.Setenv("GEMINI_API_KEY", oldKey); err != nil {
-					log.Printf("Failed to restore GEMINI_API_KEY: %v", err)
-				}
-			} else {
-				if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-					log.Printf("Failed to unset GEMINI_API_KEY: %v", err)
-				}
-			}
-		}()
-
 		var client *genai.Client
 		err = retryWithInternalBackoff(ctx, func() error {
 			return retryWith503Backoff(ctx, func() error {
 				var clientErr error
-				client, clientErr = genai.NewClient(ctx, nil)
+				client, clientErr = genai.NewClient(ctx, &genai.ClientConfig{
+					APIKey: apiKey,
+				})
 				return clientErr
 			})
 		})
