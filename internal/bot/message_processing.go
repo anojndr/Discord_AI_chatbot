@@ -17,11 +17,13 @@ import (
 	"DiscordAIChatbot/internal/utils"
 )
 
-// processMessage processes a Discord message and populates a message node
+// processMessage processes a Discord message and populates a message node.
+// It uses errgroup to concurrently handle I/O-bound tasks like API calls and file processing.
 func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node *messaging.MsgNode, isCurrentMessage bool, progressMgr *utils.ProgressManager) {
 	var cleanedContent string
 	var hasSkipDirective bool
 
+	// 1. Clean and Prepare Initial Content
 	if msg.Author.ID == s.State.User.ID {
 		cleanedContent = msg.Content
 	} else {
@@ -39,13 +41,13 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	isGoogleLensQuery := strings.HasPrefix(lc, "googlelens") && isCurrentMessage
 	isAskChannelQuery, channelQuery := processors.IsAskChannelQuery(cleanedContent)
 
-	// Early exit for Veo generation
+	// Early exit for commands that don't need the full processing pipeline
 	if strings.HasPrefix(lc, "veo ") && isCurrentMessage {
 		b.handleVeoGeneration(s, msg, cleanedContent)
 		return
 	}
 
-	// Find parent message early for attachment processing
+	// Find parent message early for context
 	parentMsg, fetchFailed, err := utils.FindParentMessage(s, &discordgo.MessageCreate{Message: msg}, s.State.User)
 	if err != nil {
 		log.Printf("Error finding parent message: %v", err)
@@ -53,14 +55,13 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 	// --- Concurrent Processing Stage ---
 	var mu sync.Mutex
-	var lensContent string
-	var channelContent string
+	var lensContent, channelContent, attachmentText, extractedURLContent, webSearchResults string
 	var images []messaging.ImageContent
 	var audioFiles []messaging.AudioContent
-	var attachmentText string
 	var hasBadAttachments bool
-	var extractedURLContent string
-	var urlExtractionErr error
+	var urlExtractionErr, webSearchErr error
+	webSearchRequired := false
+	webSearchResultCount := 0
 
 	eg, gctx := errgroup.WithContext(context.Background())
 
@@ -92,72 +93,118 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 		})
 	}
 
-	// Task 3: Process Attachments (Current and Parent)
+	// Task 3: Process Current Message Attachments
 	eg.Go(func() error {
-		// Process current message attachments
 		currentImages, currentAudio, currentText, currentBad, err := processors.ProcessAttachments(gctx, msg.Attachments, b.fileProcessor)
-		if err != nil {
-			log.Printf("Failed to process attachments: %v", err)
-			// Continue even if processing fails
-		}
-
-		// Process parent message attachments if applicable
-		var parentImages []messaging.ImageContent
-		var parentAudio []messaging.AudioContent
-		var parentText string
-		var parentBad bool
-		isDirectReply := msg.MessageReference != nil && msg.MessageReference.MessageID != ""
-		if isCurrentMessage && parentMsg != nil && len(parentMsg.Attachments) > 0 && !isDirectReply {
-			log.Printf("Processing %d attachments from parent message for non-reply context", len(parentMsg.Attachments))
-			parentImages, parentAudio, parentText, parentBad, err = processors.ProcessAttachments(gctx, parentMsg.Attachments, b.fileProcessor)
-			if err != nil {
-				log.Printf("Failed to process parent attachments: %v", err)
-			}
-		}
-
 		mu.Lock()
 		defer mu.Unlock()
-		images = append(parentImages, currentImages...)
-		audioFiles = append(parentAudio, currentAudio...)
-		hasBadAttachments = currentBad || parentBad
-		if parentText != "" {
-			if currentText != "" {
-				attachmentText = fmt.Sprintf("**📎 Referenced Files (from previous message):**\n%s\n\n**📎 Current Attachments:**\n%s", parentText, currentText)
-			} else {
-				attachmentText = fmt.Sprintf("**📎 Referenced Files (from previous message):**\n%s", parentText)
-			}
-		} else {
-			attachmentText = currentText
+		images = append(images, currentImages...)
+		audioFiles = append(audioFiles, currentAudio...)
+		if attachmentText != "" && currentText != "" {
+			attachmentText = attachmentText + "\n\n" + "**📎 Current Attachments:**\n" + currentText
+		} else if currentText != "" {
+			attachmentText = "**📎 Current Attachments:**\n" + currentText
+		}
+		hasBadAttachments = hasBadAttachments || currentBad
+		if err != nil {
+			return fmt.Errorf("failed to process current attachments: %w", err)
 		}
 		return nil
 	})
 
-	// Task 4: URL Content Extraction
-	embedTextForURL := utils.ExtractEmbedText(msg.Embeds)
-	contentForURLExtraction := strings.Join([]string{cleanedContent, embedTextForURL}, "\n")
+	// Task 4: Process Parent Message Attachments
+	isDirectReply := msg.MessageReference != nil && msg.MessageReference.MessageID != ""
+	if isCurrentMessage && parentMsg != nil && len(parentMsg.Attachments) > 0 && !isDirectReply {
+		eg.Go(func() error {
+			log.Printf("Processing %d attachments from parent message for non-reply context", len(parentMsg.Attachments))
+			parentImages, parentAudio, parentText, parentBad, err := processors.ProcessAttachments(gctx, parentMsg.Attachments, b.fileProcessor)
+			mu.Lock()
+			defer mu.Unlock()
+			images = append(parentImages, images...)
+			audioFiles = append(parentAudio, audioFiles...)
+			if parentText != "" {
+				attachmentText = "**📎 Referenced Files (from previous message):**\n" + parentText + "\n\n" + attachmentText
+			}
+			hasBadAttachments = hasBadAttachments || parentBad
+			if err != nil {
+				return fmt.Errorf("failed to process parent attachments: %w", err)
+			}
+			return nil
+		})
+	}
+
+	// Task 5: URL Content Extraction
+	contentForURLExtraction := strings.Join([]string{cleanedContent, utils.ExtractEmbedText(msg.Embeds)}, "\n")
 	if contentForURLExtraction != "" && !isAskChannelQuery {
 		eg.Go(func() error {
 			detectedURLs := processors.DetectURLs(contentForURLExtraction)
 			if len(detectedURLs) > 0 {
-				messageType := "current"
-				if !isCurrentMessage {
-					messageType = "historical"
-				}
-				log.Printf("Detected %d URL(s) in %s message: %v", len(detectedURLs), messageType, detectedURLs)
+				res, err := b.webSearchClient.ExtractURLs(gctx, detectedURLs)
+				mu.Lock()
+				extractedURLContent = res
+				urlExtractionErr = err
+				mu.Unlock()
+			}
+			return nil // Don't fail the whole group for a URL error
+		})
+	}
 
-				ctx, cancel := context.WithTimeout(gctx, 60*time.Second)
-				defer cancel()
+	// Task 6: Web Search Decision and Execution (concurrently)
+	if isCurrentMessage && !isGoogleLensQuery && !isAskChannelQuery {
+		eg.Go(func() error {
+			// Combine preliminary content for the decision model
+			mu.Lock()
+			tempContentParts := []string{cleanedContent, utils.ExtractEmbedText(msg.Embeds), attachmentText, extractedURLContent}
+			tempFullContent := strings.Join(tempContentParts, "\n\n")
+			mu.Unlock()
 
-				extracted, err := b.webSearchClient.ExtractURLs(ctx, detectedURLs)
+			userModel := b.userPrefs.GetUserModel(gctx, msg.Author.ID, "")
+			if userModel == "gemini/gemini-2.0-flash-preview-image-generation" {
+				log.Printf("Skipping web search for image generation model: %s", userModel)
+				return nil
+			}
+
+			chatHistory := b.buildChatHistoryForWebSearch(s, msg)
+			b.configMutex.RLock()
+			cfg := b.config
+			b.configMutex.RUnlock()
+			userSystemPrompt := b.userPrefs.GetUserSystemPrompt(gctx, msg.Author.ID)
+			systemPrompt := cfg.SystemPrompt
+			if userSystemPrompt != "" {
+				systemPrompt = userSystemPrompt
+			}
+
+			contentForWebSearchDecision := tempFullContent
+			if hasSkipDirective {
+				contentForWebSearchDecision = "SKIP_WEB_SEARCH_DECIDER\n\n" + tempFullContent
+			}
+
+			decisionCtx, cancel := context.WithTimeout(gctx, 45*time.Second)
+			defer cancel()
+
+			decision, err := b.webSearchClient.DecideWebSearch(decisionCtx, b.llmClient, chatHistory, contentForWebSearchDecision, msg.Author.ID, b.userPrefs, systemPrompt, images)
+			if err != nil {
+				log.Printf("Web search decision failed: %v", err)
+				return nil // Don't fail the group for a decision error
+			}
+
+			if decision.WebSearchRequired && len(decision.SearchQueries) > 0 {
+				log.Printf("Web search required. Queries: %s", strings.Join(decision.SearchQueries, ", "))
+				searchCtx, searchCancel := context.WithTimeout(gctx, 60*time.Second)
+				defer searchCancel()
+
+				results, err := b.webSearchClient.SearchMultiple(searchCtx, decision.SearchQueries)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
-					urlExtractionErr = err
-					log.Printf("URL extraction failed for %s message: %v", messageType, err)
+					webSearchErr = err
 				} else {
-					log.Printf("Successfully extracted content from URLs in %s message", messageType)
-					extractedURLContent = extracted
+					webSearchResults = results
+					webSearchRequired = true
+					webSearchResultCount = len(decision.SearchQueries) * cfg.WebSearch.MaxResults
 				}
+			} else {
+				log.Printf("Web search not required for this query")
 			}
 			return nil
 		})
@@ -166,12 +213,11 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	// Wait for all concurrent tasks to complete
 	if err := eg.Wait(); err != nil {
 		log.Printf("Error during concurrent message processing: %v", err)
-		// Decide how to handle partial failures, for now, we log and continue
+		// Errors from attachments are now propagated. We can decide to notify the user.
+		// For now, we log and continue, as some content might still be usable.
 	}
 
-	// --- Aggregation and Sequential Processing Stage ---
-
-	// Determine the base content after concurrent tasks
+	// --- Aggregation and Final Processing ---
 	var finalContent string
 	if isGoogleLensQuery {
 		finalContent = lensContent
@@ -181,9 +227,8 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 		finalContent = cleanedContent
 	}
 
-	// Combine all text parts
 	embedText := utils.ExtractEmbedText(msg.Embeds)
-	var textParts []string
+	textParts := []string{}
 	if finalContent != "" {
 		textParts = append(textParts, finalContent)
 	}
@@ -193,76 +238,26 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	if attachmentText != "" {
 		textParts = append(textParts, attachmentText)
 	}
-
-	// Handle URL extraction results
 	if extractedURLContent != "" {
-		if isCurrentMessage {
-			textParts = append(textParts, fmt.Sprintf("extracted url content: %s", extractedURLContent))
-		} else {
-			textParts = append(textParts, fmt.Sprintf("historical message extracted url content: %s", extractedURLContent))
-		}
+		textParts = append(textParts, fmt.Sprintf("extracted url content: %s", extractedURLContent))
 	}
 	if urlExtractionErr != nil {
 		textParts = append(textParts, fmt.Sprintf("\n\n⚠️ URL extraction failed: %v", urlExtractionErr))
 	}
+	if webSearchResults != "" {
+		textParts = append(textParts, fmt.Sprintf("\n\nweb search api results: %s", webSearchResults))
+	}
+	if webSearchErr != nil {
+		textParts = append(textParts, fmt.Sprintf("\n\n⚠️ Web search failed: %v", webSearchErr))
+	}
 
 	fullContent := strings.Join(textParts, "\n\n")
 
-	// --- Web Search Decision and Execution ---
-	if isCurrentMessage && !isGoogleLensQuery && !isAskChannelQuery {
-		userModel := b.userPrefs.GetUserModel(context.Background(), msg.Author.ID, "")
-		if userModel == "gemini/gemini-2.0-flash-preview-image-generation" {
-			log.Printf("Skipping web search for image generation model: %s", userModel)
-			node.SetWebSearchInfo(false, 0)
-		} else {
-			chatHistory := b.buildChatHistoryForWebSearch(s, msg)
-			b.configMutex.RLock()
-			cfg := b.config
-			b.configMutex.RUnlock()
-			userSystemPrompt := b.userPrefs.GetUserSystemPrompt(context.Background(), msg.Author.ID)
-			systemPrompt := cfg.SystemPrompt
-			if userSystemPrompt != "" {
-				systemPrompt = userSystemPrompt
-			}
-
-			contentForWebSearchDecision := fullContent
-			if hasSkipDirective {
-				contentForWebSearchDecision = "SKIP_WEB_SEARCH_DECIDER\n\n" + fullContent
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-			defer cancel()
-
-			decision, err := b.webSearchClient.DecideWebSearch(ctx, b.llmClient, chatHistory, contentForWebSearchDecision, msg.Author.ID, b.userPrefs, systemPrompt, images)
-			if err != nil {
-				log.Printf("Web search decision failed: %v", err)
-				node.SetWebSearchInfo(false, 0)
-			} else if decision.WebSearchRequired && len(decision.SearchQueries) > 0 {
-				log.Printf("Web search required. Queries: %s", strings.Join(decision.SearchQueries, ", "))
-				searchResults, err := b.webSearchClient.SearchMultiple(ctx, decision.SearchQueries)
-				if err != nil {
-					log.Printf("Web search failed: %v", err)
-					fullContent = fmt.Sprintf("%s\n\n⚠️ Web search failed: %v", fullContent, err)
-					node.SetWebSearchInfo(true, 0)
-				} else {
-					b.configMutex.RLock()
-					maxResults := b.config.WebSearch.MaxResults
-					b.configMutex.RUnlock()
-					resultCount := len(decision.SearchQueries) * maxResults
-					fullContent = fmt.Sprintf("%s\n\nweb search api results: %s", fullContent, searchResults)
-					node.SetWebSearchInfo(true, resultCount)
-				}
-			} else {
-				log.Printf("Web search not required for this query")
-				node.SetWebSearchInfo(false, 0)
-			}
-		}
-	}
-
-	// Set node properties
+	// --- Set Final Node Properties ---
 	node.SetText(fullContent)
 	node.SetImages(images)
 	node.SetAudioFiles(audioFiles)
+	node.SetWebSearchInfo(webSearchRequired, webSearchResultCount)
 	node.HasBadAttachments = hasBadAttachments
 	if msg.Author.ID == s.State.User.ID {
 		node.Role = "assistant"
