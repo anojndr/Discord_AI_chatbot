@@ -10,12 +10,52 @@ import (
 
 // PermissionChecker handles permission validation
 type PermissionChecker struct {
-	config *config.Config
+	config            *config.Config
+	adminIDs          map[string]struct{}
+	allowedUserIDs    map[string]struct{}
+	blockedUserIDs    map[string]struct{}
+	allowedRoleIDs    map[string]struct{}
+	blockedRoleIDs    map[string]struct{}
+	allowedChannelIDs map[string]struct{}
+	blockedChannelIDs map[string]struct{}
 }
 
-// NewPermissionChecker creates a new permission checker
+// NewPermissionChecker creates a new permission checker and pre-populates ID maps
 func NewPermissionChecker(cfg *config.Config) *PermissionChecker {
-	return &PermissionChecker{config: cfg}
+	p := &PermissionChecker{
+		config:            cfg,
+		adminIDs:          make(map[string]struct{}),
+		allowedUserIDs:    make(map[string]struct{}),
+		blockedUserIDs:    make(map[string]struct{}),
+		allowedRoleIDs:    make(map[string]struct{}),
+		blockedRoleIDs:    make(map[string]struct{}),
+		allowedChannelIDs: make(map[string]struct{}),
+		blockedChannelIDs: make(map[string]struct{}),
+	}
+
+	for _, id := range cfg.Permissions.Users.AdminIDs {
+		p.adminIDs[id] = struct{}{}
+	}
+	for _, id := range cfg.Permissions.Users.AllowedIDs {
+		p.allowedUserIDs[id] = struct{}{}
+	}
+	for _, id := range cfg.Permissions.Users.BlockedIDs {
+		p.blockedUserIDs[id] = struct{}{}
+	}
+	for _, id := range cfg.Permissions.Roles.AllowedIDs {
+		p.allowedRoleIDs[id] = struct{}{}
+	}
+	for _, id := range cfg.Permissions.Roles.BlockedIDs {
+		p.blockedRoleIDs[id] = struct{}{}
+	}
+	for _, id := range cfg.Permissions.Channels.AllowedIDs {
+		p.allowedChannelIDs[id] = struct{}{}
+	}
+	for _, id := range cfg.Permissions.Channels.BlockedIDs {
+		p.blockedChannelIDs[id] = struct{}{}
+	}
+
+	return p
 }
 
 // CheckPermissions checks if a user has permission to use the bot
@@ -64,58 +104,53 @@ func (p *PermissionChecker) CheckPermissions(m *discordgo.MessageCreate) bool {
 
 // isAdmin checks if user is an admin
 func (p *PermissionChecker) isAdmin(userID string) bool {
-	return p.contains(p.config.Permissions.Users.AdminIDs, userID)
+	_, ok := p.adminIDs[userID]
+	return ok
 }
 
 // checkUserPermissions validates user-level permissions
 func (p *PermissionChecker) checkUserPermissions(userID string, isDM bool) bool {
-	perms := p.config.Permissions.Users
-
 	// Check if user is blocked
-	if p.contains(perms.BlockedIDs, userID) {
+	if _, ok := p.blockedUserIDs[userID]; ok {
 		return false
 	}
 
 	// Check if user is explicitly allowed
-	if p.contains(perms.AllowedIDs, userID) {
+	if _, ok := p.allowedUserIDs[userID]; ok {
 		return true
 	}
 
 	// For DMs, if no specific user permissions are set, allow by default
 	if isDM {
-		return len(perms.AllowedIDs) == 0
+		return len(p.allowedUserIDs) == 0
 	}
 
 	// For guild messages, check if we allow all users when no specific permissions
-	return len(perms.AllowedIDs) == 0 && len(p.config.Permissions.Roles.AllowedIDs) == 0
+	return len(p.allowedUserIDs) == 0 && len(p.allowedRoleIDs) == 0
 }
 
 // checkRolePermissions validates role-level permissions
 func (p *PermissionChecker) checkRolePermissions(roleIDs []string) bool {
-	perms := p.config.Permissions.Roles
-
 	// Check if any role is blocked
 	for _, roleID := range roleIDs {
-		if p.contains(perms.BlockedIDs, roleID) {
+		if _, ok := p.blockedRoleIDs[roleID]; ok {
 			return false
 		}
 	}
 
 	// Check if any role is explicitly allowed
 	for _, roleID := range roleIDs {
-		if p.contains(perms.AllowedIDs, roleID) {
+		if _, ok := p.allowedRoleIDs[roleID]; ok {
 			return true
 		}
 	}
 
 	// If no specific role permissions are set, allow by default
-	return len(perms.AllowedIDs) == 0
+	return len(p.allowedRoleIDs) == 0
 }
 
 // checkChannelPermissions validates channel-level permissions
 func (p *PermissionChecker) checkChannelPermissions(channelIDs []string, isDM bool, userID string) bool {
-	perms := p.config.Permissions.Channels
-
 	// For DMs, use different logic
 	if isDM {
 		return p.isAdmin(userID) || p.config.AllowDMs
@@ -123,30 +158,20 @@ func (p *PermissionChecker) checkChannelPermissions(channelIDs []string, isDM bo
 
 	// Check if any channel is blocked
 	for _, channelID := range channelIDs {
-		if p.contains(perms.BlockedIDs, channelID) {
+		if _, ok := p.blockedChannelIDs[channelID]; ok {
 			return false
 		}
 	}
 
 	// Check if any channel is explicitly allowed
 	for _, channelID := range channelIDs {
-		if p.contains(perms.AllowedIDs, channelID) {
+		if _, ok := p.allowedChannelIDs[channelID]; ok {
 			return true
 		}
 	}
 
 	// If no specific channel permissions are set, allow by default
-	return len(perms.AllowedIDs) == 0
-}
-
-// contains checks if a slice contains a string
-func (p *PermissionChecker) contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return len(p.allowedChannelIDs) == 0
 }
 
 // IsVisionModel checks if a model supports vision
