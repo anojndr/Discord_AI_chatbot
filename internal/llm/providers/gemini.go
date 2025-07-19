@@ -1,8 +1,11 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image/gif"
+	"image/png"
 	"log"
 	"os"
 	"strings"
@@ -104,19 +107,42 @@ func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages [
 					imageData, mimeType, err := downloadImageFunc(ctx, part.ImageURL.URL)
 					if err != nil {
 						log.Printf("Failed to download image from %s: %v", part.ImageURL.URL, err)
-						// Skip this image but continue processing other parts
 						continue
 					}
 
-					blob := &genai.Blob{
-						MIMEType: mimeType,
-						Data:     imageData,
-					}
-					parts = append(parts, &genai.Part{InlineData: blob})
-					if strings.HasPrefix(part.ImageURL.URL, "data:") {
-						log.Printf("Successfully processed data URL image: %d bytes, %s", len(imageData), mimeType)
+					if mimeType == "image/gif" {
+						log.Printf("Processing GIF: %d bytes", len(imageData))
+						gifImage, err := gif.DecodeAll(bytes.NewReader(imageData))
+						if err != nil {
+							log.Printf("Failed to decode GIF: %v", err)
+							continue
+						}
+
+						for i, frame := range gifImage.Image {
+							var buf bytes.Buffer
+							if err := png.Encode(&buf, frame); err != nil {
+								log.Printf("Failed to encode GIF frame %d to PNG: %v", i, err)
+								continue
+							}
+							frameData := buf.Bytes()
+							blob := &genai.Blob{
+								MIMEType: "image/png",
+								Data:     frameData,
+							}
+							parts = append(parts, &genai.Part{InlineData: blob})
+							log.Printf("Successfully processed GIF frame %d as PNG: %d bytes", i, len(frameData))
+						}
 					} else {
-						log.Printf("Successfully downloaded and converted Discord image to inline data: %d bytes, %s", len(imageData), mimeType)
+						blob := &genai.Blob{
+							MIMEType: mimeType,
+							Data:     imageData,
+						}
+						parts = append(parts, &genai.Part{InlineData: blob})
+						if strings.HasPrefix(part.ImageURL.URL, "data:") {
+							log.Printf("Successfully processed data URL image: %d bytes, %s", len(imageData), mimeType)
+						} else {
+							log.Printf("Successfully downloaded and converted Discord image to inline data: %d bytes, %s", len(imageData), mimeType)
+						}
 					}
 				} else if part.Type == "generated_image" && part.GeneratedImage != nil {
 					// Handle generated images with inline data

@@ -102,8 +102,13 @@ func (c *LLMClient) downloadFromHTTP(ctx context.Context, imageURL string) ([]by
 
 	// Check content type
 	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "image/") {
-		return nil, "", fmt.Errorf("URL does not point to an image: %s", contentType)
+	if !strings.HasPrefix(contentType, "image/") && !strings.HasSuffix(strings.ToLower(imageURL), ".gif") {
+		return nil, "", fmt.Errorf("URL does not appear to be an image: content-type %q, url %q", contentType, imageURL)
+	}
+
+	// If the content type is generic but the extension is .gif, trust the extension
+	if strings.HasSuffix(strings.ToLower(imageURL), ".gif") && !strings.HasPrefix(contentType, "image/gif") {
+		contentType = "image/gif"
 	}
 
 	// Read image data
