@@ -185,7 +185,7 @@ web_search:
     ## Instructions
 
     1.  **Check for "SEARCH THE NET"**
-        If the user's query contains the exact phrase "SEARCH THE NET", you **MUST** perform a web search, regardless of context. The search query should be the user's original query with "SEARCH THE NET" removed.
+        If the user's query contains the exact phrase "SEARCH THE NET", you **MUST** perform a web search.
 
     2.  **Apply Criteria**
         If the query does not contain "SEARCH THE NET", determine if it falls into one of the four categories listed above.
@@ -212,7 +212,7 @@ web_search:
 
     ## Examples
 
-    ### 2 Examples for Requirement: No Search Needed
+    ### No Search Needed (2 Examples)
     <details>
     <summary>Example 1: Creative Writing</summary>
 
@@ -241,7 +241,7 @@ web_search:
     ```
     </details>
 
-    ### 2 Examples for Requirement: Local Information
+    ### Local Information (2 Examples)
     <details>
     <summary>Example 3: Local Weather</summary>
 
@@ -272,7 +272,7 @@ web_search:
     ```
     </details>
 
-    ### 2 Examples for Requirement: Freshness
+    ### Freshness (2 Examples)
     <details>
     <summary>Example 5: Recent Software Release</summary>
 
@@ -303,7 +303,7 @@ web_search:
     ```
     </details>
 
-    ### 2 Examples for Requirement: Niche Information
+    ### Niche Information (2 Examples)
     <details>
     <summary>Example 7: Obscure Company</summary>
 
@@ -334,7 +334,7 @@ web_search:
     ```
     </details>
 
-    ### 2 Examples for Requirement: Accuracy-Critical
+    ### Accuracy-Critical (2 Examples)
     <details>
     <summary>Example 9: Travel Regulations</summary>
 
@@ -365,7 +365,7 @@ web_search:
     ```
     </details>
 
-    ### 2 Examples for Requirement: Reformulating Vague Queries
+    ### Reformulating Vague Queries (2 Examples)
     <details>
     <summary>Example 11: Vague Follow-up (from List)</summary>
 
@@ -426,7 +426,7 @@ web_search:
     ```
     </details>
 
-    ### 2 Examples for Requirement: Handling Comparisons
+    ### Handling Comparisons (2 Examples)
     <details>
     <summary>Example 13: Software Comparison</summary>
 
@@ -463,7 +463,7 @@ web_search:
     ```
     </details>
 
-    ### 2 Examples for Requirement: Handling Images
+    ### Handling Images (2 Examples)
     <details>
     <summary>Example 15: Landmark Identification</summary>
 
@@ -494,7 +494,7 @@ web_search:
     ```
     </details>
 
-    ### 1 Example for Requirement: Force Web Search
+    ### Force Web Search (1 Example)
     <details>
     <summary>Example 17: User Override</summary>
 
