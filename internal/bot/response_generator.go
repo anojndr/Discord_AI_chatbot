@@ -117,9 +117,9 @@ processStream:
 	}
 
 	// Thread-safe access to config
-	b.mu.RLock()
+	b.configMutex.RLock()
 	usePlainResponses := b.config.UsePlainResponses
-	b.mu.RUnlock()
+	b.configMutex.RUnlock()
 
 	maxLength := utils.MaxMessageLength
 	if usePlainResponses {
@@ -140,9 +140,9 @@ processStream:
 
 	// Create initial embed with warnings and footer info
 	// Token usage info
-	b.mu.RLock()
+	b.configMutex.RLock()
 	cfg := b.config
-	b.mu.RUnlock()
+	b.configMutex.RUnlock()
 
 	tokenLimit := utils.DefaultTokenLimit
 	if params, ok := cfg.Models[model]; ok && params.TokenLimit != nil {

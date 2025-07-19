@@ -216,9 +216,9 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			node.SetWebSearchInfo(false, 0)
 		} else {
 			chatHistory := b.buildChatHistoryForWebSearch(s, msg)
-			b.mu.RLock()
+			b.configMutex.RLock()
 			cfg := b.config
-			b.mu.RUnlock()
+			b.configMutex.RUnlock()
 			userSystemPrompt := b.userPrefs.GetUserSystemPrompt(context.Background(), msg.Author.ID)
 			systemPrompt := cfg.SystemPrompt
 			if userSystemPrompt != "" {
@@ -245,9 +245,9 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 					fullContent = fmt.Sprintf("%s\n\n⚠️ Web search failed: %v", fullContent, err)
 					node.SetWebSearchInfo(true, 0)
 				} else {
-					b.mu.RLock()
+					b.configMutex.RLock()
 					maxResults := b.config.WebSearch.MaxResults
-					b.mu.RUnlock()
+					b.configMutex.RUnlock()
 					resultCount := len(decision.SearchQueries) * maxResults
 					fullContent = fmt.Sprintf("%s\n\nweb search api results: %s", fullContent, searchResults)
 					node.SetWebSearchInfo(true, resultCount)
@@ -419,9 +419,9 @@ func (b *Bot) handleGoogleLensQuery(ctx context.Context, msg *discordgo.Message,
 func (b *Bot) handleAskChannelQuery(ctx context.Context, s *discordgo.Session, msg *discordgo.Message, channelQuery string) (string, error) {
 	log.Printf("Detected askchannel query: %s", channelQuery)
 
-	b.mu.RLock()
+	b.configMutex.RLock()
 	cfg := b.config
-	b.mu.RUnlock()
+	b.configMutex.RUnlock()
 
 	userModel := b.userPrefs.GetUserModel(context.Background(), msg.Author.ID, cfg.GetDefaultModel())
 	modelTokenLimit := cfg.GetModelTokenLimit(userModel)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/fsnotify/fsnotify"
 
 	"DiscordAIChatbot/internal/auth"
 	"DiscordAIChatbot/internal/config"
@@ -41,6 +42,7 @@ type Bot struct {
 	channelProcessor *processors.ChannelProcessor
 	lastTaskTime     time.Time
 	mu               sync.RWMutex
+	configMutex      sync.RWMutex
 	healthServer     *http.Server
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
@@ -145,7 +147,57 @@ func (b *Bot) Start() error {
 		}
 	}()
 
+	// Start config file watcher
+	go b.watchConfig()
+
 	return b.session.Open()
+}
+
+// watchConfig watches the config file for changes and reloads it
+func (b *Bot) watchConfig() {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Println("ERROR: Could not create config watcher:", err)
+		return
+	}
+	defer func() {
+		if err := watcher.Close(); err != nil {
+			log.Println("ERROR: Could not close config watcher:", err)
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					log.Println("Config file modified. Reloading...")
+					newCfg, err := config.LoadConfig("configs/config.yaml")
+					if err != nil {
+						log.Println("ERROR: Failed to reload config:", err)
+					} else {
+						b.configMutex.Lock()
+						b.config = newCfg
+						b.configMutex.Unlock()
+						log.Println("Config reloaded successfully.")
+					}
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Println("ERROR: Config watcher error:", err)
+			}
+		}
+	}()
+
+	err = watcher.Add("configs/config.yaml")
+	if err != nil {
+		log.Println("ERROR: Could not add config to watcher:", err)
+	}
 }
 
 // Stop stops the Discord bot

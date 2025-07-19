@@ -43,9 +43,9 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 	}
 
 	// Thread-safe access to config
-	b.mu.RLock()
+	b.configMutex.RLock()
 	config := b.config
-	b.mu.RUnlock()
+	b.configMutex.RUnlock()
 
 	// Check if config is nil (safety check)
 	if config == nil {
@@ -227,9 +227,9 @@ func (b *Bot) handleAPIKeysCommand(s *discordgo.Session, i *discordgo.Interactio
 	}
 
 	// Thread-safe access to config
-	b.mu.RLock()
+	b.configMutex.RLock()
 	config := b.config
-	b.mu.RUnlock()
+	b.configMutex.RUnlock()
 
 	// Check if config is nil (safety check)
 	if config == nil {
@@ -374,9 +374,9 @@ func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.Interac
 	}
 
 	// Thread-safe access to config
-	b.mu.RLock()
+	b.configMutex.RLock()
 	config := b.config
-	b.mu.RUnlock()
+	b.configMutex.RUnlock()
 
 	// Check if config is nil (safety check)
 	if config == nil {
@@ -483,9 +483,9 @@ func (b *Bot) handleClearDatabaseCommand(s *discordgo.Session, i *discordgo.Inte
 	}
 
 	// Thread-safe access to config
-	b.mu.RLock()
+	b.configMutex.RLock()
 	config := b.config
-	b.mu.RUnlock()
+	b.configMutex.RUnlock()
 
 	// Check if config is nil (safety check)
 	if config == nil {

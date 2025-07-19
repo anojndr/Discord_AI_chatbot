@@ -21,9 +21,9 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 	var warnings []string
 
 	// Thread-safe access to config
-	b.mu.RLock()
+	b.configMutex.RLock()
 	config := b.config
-	b.mu.RUnlock()
+	b.configMutex.RUnlock()
 
 	currentMsg := m.Message
 	maxMessages := config.MaxMessages
