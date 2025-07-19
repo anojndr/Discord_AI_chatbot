@@ -1,7 +1,9 @@
 package context
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -267,16 +269,29 @@ func (cm *ContextManager) findNonPairedMessages(allMessages []messaging.OpenAIMe
 	return nonPaired
 }
 
-// messagesEqual compares two messages for equality (simplified)
+// messagesEqual compares two messages for equality.
 func (cm *ContextManager) messagesEqual(msg1, msg2 messaging.OpenAIMessage) bool {
 	if msg1.Role != msg2.Role {
 		return false
 	}
-	
-	// Simple content comparison
-	content1 := fmt.Sprintf("%v", msg1.Content)
-	content2 := fmt.Sprintf("%v", msg2.Content)
-	return content1 == content2
+
+	// Attempt direct string comparison first for the common case
+	s1, ok1 := msg1.Content.(string)
+	s2, ok2 := msg2.Content.(string)
+	if ok1 && ok2 {
+		return s1 == s2
+	}
+
+	// Fallback to JSON marshaling for complex types.
+	// This is still better than fmt.Sprintf.
+	b1, err1 := json.Marshal(msg1.Content)
+	b2, err2 := json.Marshal(msg2.Content)
+
+	if err1 != nil || err2 != nil {
+		return false // Or handle error appropriately
+	}
+
+	return bytes.Equal(b1, b2)
 }
 
 // handleTruncation handles truncation of the latest user query as a last resort
