@@ -44,11 +44,7 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 	for idx, att := range attachments {
 		wg.Add(1)
 
-		// Capture loop variables
-		attachment := att
-		index := idx
-
-		go func() {
+		go func(index int, attachment *discordgo.MessageAttachment) {
 			defer wg.Done()
 
 			// Check supported types (extension detection first)
@@ -118,7 +114,7 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 				fileTypeInfo = fmt.Sprintf("**📄 File: %s**\n", attachment.Filename)
 			}
 			resultsChan <- indexedResult{idx: index, text: fileTypeInfo + extractedText}
-		}()
+		}(idx, att)
 	}
 
 	// Wait for all goroutines to finish
