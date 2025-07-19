@@ -123,14 +123,16 @@ func (g *GoogleLensClient) Search(ctx context.Context, imageURL string, opts *Se
 	// Log the domain and URL format for debugging
 	log.Printf("Google Lens: Image URL domain: %s, trusted: %t", parsed.Host, isDomainTrusted)
 
-	// Test if the URL is accessible before sending to Google Lens
-	testResp, err := http.Head(imageURL)
-	if err != nil {
-		log.Printf("Google Lens: Warning - Image URL not accessible via HEAD request: %v", err)
-	} else {
-		log.Printf("Google Lens: Image URL accessible, Content-Type: %s, Status: %d",
-			testResp.Header.Get("Content-Type"), testResp.StatusCode)
-		_ = testResp.Body.Close()
+	// Test if the URL is accessible before sending to Google Lens, unless disabled
+	if !g.config.SerpAPI.DisablePreflightCheck {
+		testResp, err := http.Head(imageURL)
+		if err != nil {
+			log.Printf("Google Lens: Warning - Image URL not accessible via HEAD request: %v", err)
+		} else {
+			log.Printf("Google Lens: Image URL accessible, Content-Type: %s, Status: %d",
+				testResp.Header.Get("Content-Type"), testResp.StatusCode)
+			_ = testResp.Body.Close()
+		}
 	}
 
 	// Allow explicit user-provided URLs (those starting with http/https that aren't from trusted domains)

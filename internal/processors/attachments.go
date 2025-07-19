@@ -24,29 +24,22 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 	// same order when forwarded to the LLM. Because we are processing attachments
 	// concurrently, we first keep the result together with its original index
 	// and then sort at the end.
-	type indexedImage struct {
-		idx int
-		img messaging.ImageContent
-	}
-	type indexedAudio struct {
+	type indexedResult struct {
 		idx   int
+		img   messaging.ImageContent
 		audio messaging.AudioContent
+		text  string
+		isBad bool
+		err   error
 	}
-
-	var (
-		imageResults      []indexedImage
-		audioResults      []indexedAudio
-		textParts         []string
-		hasBadAttachments bool
-		mu                sync.Mutex
-		wg                sync.WaitGroup
-		firstErr          error
-	)
 
 	// Early exit if no attachments
 	if len(attachments) == 0 {
 		return nil, nil, "", false, nil
 	}
+
+	resultsChan := make(chan indexedResult, len(attachments))
+	var wg sync.WaitGroup
 
 	for idx, att := range attachments {
 		wg.Add(1)
@@ -66,20 +59,14 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 			isTextByExt := fileProcessor.isTextFileByExtension(attachment.Filename)
 
 			if !isImage && !isAudio && !isText && !isPDF && !isTextByExt {
-				mu.Lock()
-				hasBadAttachments = true
-				mu.Unlock()
+				resultsChan <- indexedResult{idx: index, isBad: true}
 				return
 			}
 
 			// Download attachment
 			resp, err := http.Get(attachment.URL)
 			if err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("failed to download attachment: %w", err)
-				}
-				mu.Unlock()
+				resultsChan <- indexedResult{idx: index, err: fmt.Errorf("failed to download attachment: %w", err)}
 				return
 			}
 			defer func() {
@@ -90,11 +77,7 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 
 			data, err := io.ReadAll(resp.Body)
 			if err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("failed to read attachment: %w", err)
-				}
-				mu.Unlock()
+				resultsChan <- indexedResult{idx: index, err: fmt.Errorf("failed to read attachment: %w", err)}
 				return
 			}
 
@@ -102,36 +85,26 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 				// Image attachment -> encode as data URL
 				encodedData := base64.StdEncoding.EncodeToString(data)
 				dataURL := fmt.Sprintf("data:%s;base64,%s", attachment.ContentType, encodedData)
-
-				mu.Lock()
-				imageResults = append(imageResults, indexedImage{idx: index, img: messaging.ImageContent{
+				resultsChan <- indexedResult{idx: index, img: messaging.ImageContent{
 					Type:     "image_url",
 					ImageURL: messaging.ImageURL{URL: dataURL},
-				}})
-				mu.Unlock()
+				}}
 				return
 			} else if isAudio {
 				// Audio attachment -> store raw data
-				mu.Lock()
-				audioResults = append(audioResults, indexedAudio{
-					idx: index,
-					audio: messaging.AudioContent{
-						Type:     "audio_file",
-						MIMEType: attachment.ContentType,
-						URL:      attachment.URL,
-						Data:     data,
-					},
-				})
-				mu.Unlock()
+				resultsChan <- indexedResult{idx: index, audio: messaging.AudioContent{
+					Type:     "audio_file",
+					MIMEType: attachment.ContentType,
+					URL:      attachment.URL,
+					Data:     data,
+				}}
 				return
 			}
 
 			// Text or PDF attachment -> process via FileProcessor
 			extractedText, err := fileProcessor.ProcessFile(data, attachment.ContentType, attachment.Filename)
 			if err != nil {
-				mu.Lock()
-				hasBadAttachments = true
-				mu.Unlock()
+				resultsChan <- indexedResult{idx: index, isBad: true}
 				return
 			}
 
@@ -144,31 +117,49 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 			case isTextByExt:
 				fileTypeInfo = fmt.Sprintf("**📄 File: %s**\n", attachment.Filename)
 			}
-
-			mu.Lock()
-			textParts = append(textParts, fileTypeInfo+extractedText)
-			mu.Unlock()
+			resultsChan <- indexedResult{idx: index, text: fileTypeInfo + extractedText}
 		}()
 	}
 
 	// Wait for all goroutines to finish
 	wg.Wait()
+	close(resultsChan)
+
+	// Collect and sort results from the channel
+	allResults := make([]indexedResult, 0, len(attachments))
+	for res := range resultsChan {
+		allResults = append(allResults, res)
+	}
+	sort.Slice(allResults, func(i, j int) bool { return allResults[i].idx < allResults[j].idx })
+
+	var (
+		orderedImages     []messaging.ImageContent
+		orderedAudio      []messaging.AudioContent
+		textParts         []string
+		hasBadAttachments bool
+		firstErr          error
+	)
+
+	for _, res := range allResults {
+		if res.err != nil && firstErr == nil {
+			firstErr = res.err
+		}
+		if res.isBad {
+			hasBadAttachments = true
+		}
+		if res.img.Type != "" {
+			orderedImages = append(orderedImages, res.img)
+		}
+		if res.audio.Type != "" {
+			orderedAudio = append(orderedAudio, res.audio)
+		}
+		if res.text != "" {
+			textParts = append(textParts, res.text)
+		}
+	}
 
 	if firstErr != nil {
 		return nil, nil, "", hasBadAttachments, firstErr
-	}
-
-	// Re-establish the original order for images and audio
-	sort.Slice(imageResults, func(i, j int) bool { return imageResults[i].idx < imageResults[j].idx })
-	var orderedImages []messaging.ImageContent
-	for _, res := range imageResults {
-		orderedImages = append(orderedImages, res.img)
-	}
-
-	sort.Slice(audioResults, func(i, j int) bool { return audioResults[i].idx < audioResults[j].idx })
-	var orderedAudio []messaging.AudioContent
-	for _, res := range audioResults {
-		orderedAudio = append(orderedAudio, res.audio)
 	}
 
 	return orderedImages, orderedAudio, strings.Join(textParts, "\n\n"), hasBadAttachments, nil

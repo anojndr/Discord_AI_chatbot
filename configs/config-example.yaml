@@ -517,6 +517,7 @@ serpapi:
   api_keys:          # Multiple API keys (recommended for rotation)
     - ""
     - ""
+  disable_preflight_check: true # Optional: disable HEAD request before sending to SerpAPI
 
 # ============================================================================
 # INFRASTRUCTURE

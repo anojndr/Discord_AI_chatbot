@@ -50,8 +50,9 @@ type Config struct {
 
 	// SerpAPI settings
 	SerpAPI struct {
-		APIKey  string   `yaml:"api_key,omitempty"`  // Keep for backward compatibility
-		APIKeys []string `yaml:"api_keys,omitempty"` // New field for multiple keys
+		APIKey                string   `yaml:"api_key,omitempty"`  // Keep for backward compatibility
+		APIKeys               []string `yaml:"api_keys,omitempty"` // New field for multiple keys
+		DisablePreflightCheck bool     `yaml:"disable_preflight_check,omitempty"`
 	} `yaml:"serpapi"`
 
 	// Permissions
