@@ -533,22 +533,32 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 	data := i.ApplicationCommandData()
 
 	if len(data.Options) == 0 {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: "❌ Please provide a prompt for video generation.",
 				Flags:   discordgo.MessageFlagsEphemeral,
 			},
-		})
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
 		return
 	}
 
 	prompt := data.Options[0].StringValue()
 
 	// Acknowledge the interaction immediately
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-	})
+	}); err != nil {
+		log.Printf("Failed to send deferred response: %v", err)
+		// Optionally, try to send an error message back to the user
+		errorContent := "❌ An error occurred while processing your request."
+		_, _ = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &errorContent,
+		})
+		return
+	}
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -558,14 +568,16 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 		if err != nil {
 			log.Printf("Failed to generate video: %v", err)
 			errorContent := fmt.Sprintf("❌ Failed to generate video: %v", err)
-			s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &errorContent,
-			})
+			}); err != nil {
+				log.Printf("Failed to edit interaction response with error: %v", err)
+			}
 			return
 		}
 
 		successContent := "✅ Video generated successfully!"
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: &successContent,
 			Files: []*discordgo.File{
 				{
@@ -574,6 +586,8 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 					Reader:      strings.NewReader(string(videoData)),
 				},
 			},
-		})
+		}); err != nil {
+			log.Printf("Failed to edit interaction response with video: %v", err)
+		}
 	}()
 }

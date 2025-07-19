@@ -521,7 +521,9 @@ func (g *GeminiProvider) GenerateVideo(ctx context.Context, model string, prompt
 
 		if err != nil {
 			if isAPIKeyError(err) {
-				g.apiKeyManager.MarkKeyAsBad(providerName, apiKey, err.Error())
+				if err := g.apiKeyManager.MarkKeyAsBad(providerName, apiKey, err.Error()); err != nil {
+					log.Printf("Failed to mark API key as bad: %v", err)
+				}
 				log.Printf("API key issue detected, trying next key: %v", err)
 				continue
 			}

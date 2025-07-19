@@ -124,16 +124,20 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 			// Delete the "thinking" message
 			if thinkingMsg != nil {
-				s.ChannelMessageDelete(thinkingMsg.ChannelID, thinkingMsg.ID)
+				if err := s.ChannelMessageDelete(thinkingMsg.ChannelID, thinkingMsg.ID); err != nil {
+					log.Printf("Failed to delete 'thinking' message: %v", err)
+				}
 			}
 
 			if err != nil {
 				log.Printf("Failed to generate video: %v", err)
-				s.ChannelMessageSend(msg.ChannelID, fmt.Sprintf("❌ Failed to generate video: %v", err))
+				if _, err := s.ChannelMessageSend(msg.ChannelID, fmt.Sprintf("❌ Failed to generate video: %v", err)); err != nil {
+					log.Printf("Failed to send video generation failure message: %v", err)
+				}
 				return
 			}
 
-			s.ChannelMessageSendComplex(msg.ChannelID, &discordgo.MessageSend{
+			if _, err := s.ChannelMessageSendComplex(msg.ChannelID, &discordgo.MessageSend{
 				Content: "✅ Video generated successfully!",
 				Files: []*discordgo.File{
 					{
@@ -143,7 +147,9 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 					},
 				},
 				Reference: msg.Reference(),
-			})
+			}); err != nil {
+				log.Printf("Failed to send video message: %v", err)
+			}
 		}()
 		// End processing for this message
 		return
