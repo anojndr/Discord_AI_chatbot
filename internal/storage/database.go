@@ -135,6 +135,8 @@ func InitializeAllTables(dbURL string) error {
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_chart_libraries_installed ON chart_libraries(is_installed)`,
 		`CREATE INDEX IF NOT EXISTS idx_chart_libraries_last_used ON chart_libraries(last_used)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_bad_api_keys_provider ON bad_api_keys(provider)`,
 	}
 
 	for _, index := range indexes {
