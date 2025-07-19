@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -15,7 +16,8 @@ import (
 type APIKeyManager struct {
 	db               *sql.DB
 	mu               sync.RWMutex
-	keyRotationIndex map[string]int // provider -> current key index
+	keyRotationIndex map[string]int            // provider -> current key index
+	badKeyCache      *lru.Cache[string, []string] // provider -> []badKeys
 }
 
 // NewAPIKeyManager creates a new API key manager with shared database connection
@@ -30,9 +32,11 @@ func NewAPIKeyManager(dbURL string) *APIKeyManager {
 		log.Fatalf("Failed to get database connection: %v", err)
 	}
 
+	cache, _ := lru.New[string, []string](128) // Cache up to 128 providers
 	manager := &APIKeyManager{
 		db:               db,
 		keyRotationIndex: make(map[string]int),
+		badKeyCache:      cache,
 	}
 
 	return manager
@@ -47,10 +51,16 @@ func (akm *APIKeyManager) GetNextAPIKey(ctx context.Context, provider string, av
 	akm.mu.Lock()
 	defer akm.mu.Unlock()
 
-	// Get bad keys for this provider
-	badKeys, err := akm.getBadKeys(ctx, provider)
-	if err != nil {
-		return "", fmt.Errorf("failed to get bad keys: %w", err)
+	// Check cache first
+	badKeys, ok := akm.badKeyCache.Get(provider)
+	if !ok {
+		// Cache miss: query DB
+		dbBadKeys, err := akm.getBadKeys(ctx, provider)
+		if err != nil {
+			return "", fmt.Errorf("failed to get bad keys: %w", err)
+		}
+		akm.badKeyCache.Add(provider, dbBadKeys)
+		badKeys = dbBadKeys
 	}
 
 	// Filter out bad keys
@@ -104,6 +114,7 @@ func (akm *APIKeyManager) MarkKeyAsBad(ctx context.Context, provider, apiKey str
 		return fmt.Errorf("failed to mark API key as bad: %w", err)
 	}
 
+	akm.badKeyCache.Remove(provider) // Simple invalidation
 	log.Printf("Marked API key as bad for provider %s: %s", provider, reason)
 	return nil
 }
@@ -140,7 +151,11 @@ func (akm *APIKeyManager) resetBadKeys(ctx context.Context, provider string) err
 	_, err := akm.db.ExecContext(ctx, `
 		DELETE FROM bad_api_keys WHERE provider = $1
 	`, provider)
-	return err
+	if err != nil {
+		return err
+	}
+	akm.badKeyCache.Remove(provider)
+	return nil
 }
 
 // ResetBadKeys is a public method to reset bad keys for a provider
