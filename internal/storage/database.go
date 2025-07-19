@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"sync"
 	"time"
 
@@ -48,10 +50,12 @@ func GetDatabase(dbURL string) (*sql.DB, error) {
 		db.SetConnMaxLifetime(5 * time.Minute)
 		db.SetConnMaxIdleTime(2 * time.Minute)
 
-		// Test connectivity once
-		if err := db.Ping(); err != nil {
+		// Test connectivity once with a timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := db.PingContext(ctx); err != nil {
 			_ = db.Close()
-			initErr = err
+			initErr = fmt.Errorf("database ping failed: %w", err)
 			return
 		}
 
