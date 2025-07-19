@@ -129,9 +129,8 @@ processStream:
 	}
 
 	var responseMessages []*discordgo.Message
-	var responseContents []string
+	var responseContents []*strings.Builder
 	var editTask *time.Timer
-	var totalContent string
 	var generatedImages [][]byte // Store generated images
 	var imageMIMETypes []string  // Store MIME types for images
 	lastEditTime := time.Now()
@@ -234,7 +233,7 @@ processStream:
 				lastMsg := responseMessages[len(responseMessages)-1]
 				currentContent := ""
 				if len(responseContents) > 0 {
-					currentContent = responseContents[len(responseContents)-1]
+					currentContent = responseContents[len(responseContents)-1].String()
 				}
 
 				// Create error embed with current content + error
@@ -293,15 +292,13 @@ processStream:
 			// Clear progress message by updating to empty state
 		}
 
-		totalContent += response.Content
-
 		// Check if we need to start a new message
-		needsNewMsg := len(responseContents) == 0 || (len(responseContents) > 0 && len(responseContents[len(responseContents)-1]+response.Content) > maxLength)
+		needsNewMsg := len(responseContents) == 0 || (len(responseContents) > 0 && responseContents[len(responseContents)-1].Len()+len(response.Content) > maxLength)
 
 		if needsNewMsg && len(responseContents) > 0 {
 			// Finalize the current message before starting a new one
 			if !usePlainResponses && len(responseMessages) > 0 {
-				finalizeContent := responseContents[len(responseContents)-1]
+				finalizeContent := responseContents[len(responseContents)-1].String()
 				finalizeEmbed := utils.CreateEmbed(finalizeContent, warnings, false, footerInfo) // Still streaming, so incomplete
 
 				lastMsg := responseMessages[len(responseMessages)-1]
@@ -312,13 +309,13 @@ processStream:
 			}
 
 			// Now start new message
-			responseContents = append(responseContents, "")
+			responseContents = append(responseContents, &strings.Builder{})
 		} else if needsNewMsg {
 			// First message
-			responseContents = append(responseContents, "")
+			responseContents = append(responseContents, &strings.Builder{})
 		}
 
-		responseContents[len(responseContents)-1] += response.Content
+		responseContents[len(responseContents)-1].WriteString(response.Content)
 
 		if !usePlainResponses {
 			// Update embed more frequently
@@ -331,7 +328,7 @@ processStream:
 					editTask.Stop()
 				}
 
-				content := responseContents[len(responseContents)-1]
+				content := responseContents[len(responseContents)-1].String()
 				if !isFinalEdit {
 					content += utils.StreamingIndicator
 				}
@@ -431,7 +428,7 @@ processStream:
 	// Final update to ensure completion
 
 	if !usePlainResponses && len(responseMessages) > 0 && len(responseContents) > 0 {
-		finalContent := responseContents[len(responseContents)-1]
+		finalContent := responseContents[len(responseContents)-1].String()
 
 		// Add token usage now that generation is complete
 		finalCurrentTokens := utils.EstimateTokenCount(messages)
@@ -463,7 +460,8 @@ processStream:
 	// Handle plain responses
 	if usePlainResponses {
 		currentRef := messageRef
-		for i, content := range responseContents {
+		for i, contentBuilder := range responseContents {
+			content := contentBuilder.String()
 			// Add download button to the last plain response
 			var components []discordgo.MessageComponent
 			if i == len(responseContents)-1 {
@@ -515,7 +513,11 @@ processStream:
 	}
 
 	// Update response nodes with full content
-	fullContent := strings.Join(responseContents, "")
+	var fullContentBuilder strings.Builder
+	for _, sb := range responseContents {
+		fullContentBuilder.WriteString(sb.String())
+	}
+	fullContent := fullContentBuilder.String()
 
 	// Process tables and convert to images
 	tableCtx := context.Background()
