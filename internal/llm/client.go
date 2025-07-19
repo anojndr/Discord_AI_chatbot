@@ -36,13 +36,14 @@ type LLMClient struct {
 	clientMapMutex sync.RWMutex
 	imageCache     *lru.Cache[string, *ImageCacheEntry]
 	imageCacheMu   sync.RWMutex
+	httpClient     *http.Client
 }
 
 // Client is an alias for LLMClient for convenience
 type Client = LLMClient
 
 // NewLLMClient creates a new LLM client
-func NewLLMClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager) *LLMClient {
+func NewLLMClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager, httpClient *http.Client) *LLMClient {
 	logging.LogToFile("Initializing LLM client")
 	imageCache, err := lru.New[string, *ImageCacheEntry](1000)
 	if err != nil {
@@ -54,6 +55,7 @@ func NewLLMClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager) *LLM
 		geminiProvider: providers.NewGeminiProvider(cfg, apiKeyManager),
 		openAIClients:  make(map[string]*openai.Client),
 		imageCache:     imageCache,
+		httpClient:     httpClient,
 	}
 	return client
 }
@@ -685,14 +687,10 @@ func (c *LLMClient) TestProviderConnectivity(providerName string) error {
 	}
 
 	// Test basic connectivity with a simple HTTP request
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
 	// Try to reach the models endpoint (common for OpenAI-compatible APIs)
 	testURL := strings.TrimSuffix(provider.BaseURL, "/") + "/models"
 
-	resp, err := client.Get(testURL)
+	resp, err := c.httpClient.Get(testURL)
 	if err != nil {
 		return fmt.Errorf("cannot connect to %s: %w. "+
 			"Please check: 1) Is the server running? 2) Is the URL correct? 3) Network connectivity",

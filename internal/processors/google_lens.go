@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"DiscordAIChatbot/internal/config"
-	"DiscordAIChatbot/internal/net"
 	"DiscordAIChatbot/internal/storage"
 )
 
@@ -23,11 +22,11 @@ type GoogleLensClient struct {
 }
 
 // NewGoogleLensClient creates a new GoogleLensClient with reasonable defaults.
-func NewGoogleLensClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager) *GoogleLensClient {
+func NewGoogleLensClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager, httpClient *http.Client) *GoogleLensClient {
 	return &GoogleLensClient{
 		config:        cfg,
 		apiKeyManager: apiKeyManager,
-		httpClient:    net.NewOptimizedClient(0),
+		httpClient:    httpClient,
 	}
 }
 

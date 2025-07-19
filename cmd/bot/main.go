@@ -12,7 +12,9 @@ import (
 	"DiscordAIChatbot/internal/config"
 	"DiscordAIChatbot/internal/llm"
 	"DiscordAIChatbot/internal/logging"
+	"DiscordAIChatbot/internal/net"
 	"DiscordAIChatbot/internal/storage"
+	"time"
 )
 
 // main is the entry point for the Discord AI Chatbot application.
@@ -123,7 +125,8 @@ func testAllProviders(cfg *config.Config) {
 		}
 
 		apiKeyManager := storage.NewAPIKeyManager(cfg.DatabaseURL)
-		llmClient := llm.NewLLMClient(cfg, apiKeyManager)
+		httpClient := net.NewOptimizedClient(config.DefaultHTTPTimeout * time.Second)
+		llmClient := llm.NewLLMClient(cfg, apiKeyManager, httpClient)
 
 		if err := llmClient.TestProviderConnectivity(providerName); err != nil {
 			logging.PrintfAndLog("❌ %s: %v\n", providerName, err)
@@ -152,7 +155,8 @@ func testSingleProvider(cfg *config.Config, provider string) {
 	}
 
 	apiKeyManager := storage.NewAPIKeyManager(cfg.DatabaseURL)
-	llmClient := llm.NewLLMClient(cfg, apiKeyManager)
+	httpClient := net.NewOptimizedClient(config.DefaultHTTPTimeout * time.Second)
+	llmClient := llm.NewLLMClient(cfg, apiKeyManager, httpClient)
 	defer func() {
 		if err := apiKeyManager.Close(); err != nil {
 			log.Printf("Failed to close API key manager: %v", err)

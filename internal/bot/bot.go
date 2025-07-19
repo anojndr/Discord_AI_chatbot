@@ -16,6 +16,7 @@ import (
 	"DiscordAIChatbot/internal/config"
 	"DiscordAIChatbot/internal/llm"
 	"DiscordAIChatbot/internal/messaging"
+	"DiscordAIChatbot/internal/net"
 	"DiscordAIChatbot/internal/processors"
 	"DiscordAIChatbot/internal/storage"
 	"DiscordAIChatbot/internal/utils"
@@ -40,6 +41,7 @@ type Bot struct {
 	fileProcessor    *processors.FileProcessor
 	chartProcessor   *processors.ChartProcessor
 	channelProcessor *processors.ChannelProcessor
+	httpClient       *http.Client
 	lastTaskTime     time.Time
 	mu               sync.RWMutex
 	configMutex      sync.RWMutex
@@ -68,14 +70,15 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 
 	// Set up bot
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	httpClient := net.NewOptimizedClient(config.DefaultHTTPTimeout * time.Second)
 	bot := &Bot{
 		session:          session,
 		config:           cfg,
 		nodeManager:      messaging.NewMsgNodeManager(config.MaxMessageNodes),
 		permChecker:      auth.NewPermissionChecker(cfg),
-		llmClient:        llm.NewLLMClient(cfg, apiKeyManager),
-		webSearchClient:  processors.NewWebSearchClient(cfg),
-		googleLensClient: processors.NewGoogleLensClient(cfg, apiKeyManager),
+		llmClient:        llm.NewLLMClient(cfg, apiKeyManager, httpClient),
+		webSearchClient:  processors.NewWebSearchClient(cfg, httpClient),
+		googleLensClient: processors.NewGoogleLensClient(cfg, apiKeyManager, httpClient),
 		userPrefs:        storage.NewUserPreferencesManager(cfg.DatabaseURL),
 		apiKeyManager:    apiKeyManager,
 		tableRenderer:    createTableRenderer(cfg),
@@ -85,6 +88,7 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 		messageCache:     storage.NewMessageNodeCache(cfg.DatabaseURL),
 		shutdownCtx:      shutdownCtx,
 		shutdownCancel:   shutdownCancel,
+		httpClient:       httpClient,
 	}
 
 	// Configure Discord session

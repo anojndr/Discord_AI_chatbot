@@ -17,7 +17,6 @@ import (
 	"DiscordAIChatbot/internal/interfaces"
 	"DiscordAIChatbot/internal/llm"
 	"DiscordAIChatbot/internal/messaging"
-	"DiscordAIChatbot/internal/net"
 	"DiscordAIChatbot/internal/utils"
 )
 
@@ -113,10 +112,10 @@ type TwitterComment struct {
 // NewWebSearchClient creates a new web search client with optimized HTTP settings.
 // It configures connection pooling, timeouts, and other performance optimizations
 // for reliable web search API communication.
-func NewWebSearchClient(cfg *config.Config) *WebSearchClient {
+func NewWebSearchClient(cfg *config.Config, httpClient *http.Client) *WebSearchClient {
 	return &WebSearchClient{
 		config:    cfg,
-		httpClient: net.NewOptimizedClient(config.DefaultHTTPTimeout * time.Second),
+		httpClient: httpClient,
 		formatter: NewWebSearchResultFormatter(),
 	}
 }
@@ -415,11 +414,8 @@ func (w *WebSearchClient) ExtractURLs(ctx context.Context, urls []string) (strin
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// Create a new client for this request without a timeout, but reusing the transport
-	extractClient := net.NewOptimizedClient(0)
-
 	// Make request
-	resp, err := extractClient.Do(req)
+	resp, err := w.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
