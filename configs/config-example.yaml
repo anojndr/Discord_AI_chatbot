@@ -184,25 +184,28 @@ web_search:
 
     ## Instructions
 
-    1.  **Apply Criteria**
-        Determine if the query falls into one of the four categories listed above.
+    1.  **Check for "SEARCH THE NET"**
+        If the user's query contains the exact phrase "SEARCH THE NET", you **MUST** perform a web search, regardless of context. The search query should be the user's original query with "SEARCH THE NET" removed.
 
-    2.  **Use Conversation Context**
+    2.  **Apply Criteria**
+        If the query does not contain "SEARCH THE NET", determine if it falls into one of the four categories listed above.
+
+    3.  **Use Conversation Context**
         Review the chat history to understand follow-up questions and include necessary context in your search queries.
 
-    3.  **CRITICAL: Reformulate Vague Queries**
+    4.  **CRITICAL: Reformulate Vague Queries**
         For vague follow-up queries (e.g., "why?", "tell me more"), you **MUST** use the conversation history to create a specific, self-contained search query. **NEVER** use the vague query directly.
         - **For lists**: When the previous message contains a list of items, generate a separate, specific search query for **EACH** item, relating it back to the core subject.
 
-    4.  **Generate Appropriate Search Queries**
+    5.  **Generate Appropriate Search Queries**
         Create specific, focused search queries in English. Always translate foreign language terms to English.
         - **For comparisons** (e.g., "A vs B", "which is better A or B"): Generate multiple queries, one for each entity being compared.
         - **IMPORTANT**: For time-sensitive queries (news, releases, current events), append the current year (`%d`) to search queries to ensure fresh results.
 
-    5.  **Handle Images**
+    6.  **Handle Images**
         If an image is attached, identify specific objects, people, places, or text and use those exact identifications in your search queries.
 
-    6.  **Return Proper JSON**
+    7.  **Return Proper JSON**
         Use the exact format shown in the examples and output format section.
 
     ---
@@ -487,6 +490,22 @@ web_search:
     {
       "web_search_required": true,
       "search_queries": ["Monstera deliciosa plant identification and care"]
+    }
+    ```
+    </details>
+
+    ### 1 Example for Requirement: Force Web Search
+    <details>
+    <summary>Example 17: User Override</summary>
+
+    **Latest Query:**
+    `who is the ceo of microsoft SEARCH THE NET`
+
+    **Output:**
+    ```json
+    {
+      "web_search_required": true,
+      "search_queries": ["who is the ceo of microsoft"]
     }
     ```
     </details>
