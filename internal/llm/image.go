@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"DiscordAIChatbot/internal/net"
 )
 
 // downloadImageFromURL downloads an image from a URL and returns the image data and MIME type
@@ -58,9 +60,7 @@ func (c *LLMClient) downloadImageFromURL(ctx context.Context, imageURL string) (
 // downloadFromHTTP downloads an image from an HTTP URL
 func (c *LLMClient) downloadFromHTTP(ctx context.Context, imageURL string) ([]byte, string, error) {
 	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := net.NewOptimizedClient(30 * time.Second)
 
 	// Create request with context
 	req, err := http.NewRequestWithContext(ctx, "GET", imageURL, nil)

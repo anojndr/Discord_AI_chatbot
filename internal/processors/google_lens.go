@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"DiscordAIChatbot/internal/config"
+	"DiscordAIChatbot/internal/net"
 	"DiscordAIChatbot/internal/storage"
 )
 
@@ -27,15 +27,7 @@ func NewGoogleLensClient(cfg *config.Config, apiKeyManager *storage.APIKeyManage
 	return &GoogleLensClient{
 		config:        cfg,
 		apiKeyManager: apiKeyManager,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:          100,
-				MaxIdleConnsPerHost:   100,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-		},
+		httpClient:    net.NewOptimizedClient(0),
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"DiscordAIChatbot/internal/interfaces"
 	"DiscordAIChatbot/internal/llm"
 	"DiscordAIChatbot/internal/messaging"
+	"DiscordAIChatbot/internal/net"
 	"DiscordAIChatbot/internal/utils"
 )
 
@@ -115,22 +116,8 @@ type TwitterComment struct {
 func NewWebSearchClient(cfg *config.Config) *WebSearchClient {
 	return &WebSearchClient{
 		config:    cfg,
-		httpClient: createOptimizedHTTPClient(),
+		httpClient: net.NewOptimizedClient(config.DefaultHTTPTimeout * time.Second),
 		formatter: NewWebSearchResultFormatter(),
-	}
-}
-
-// createOptimizedHTTPClient creates an HTTP client with performance optimizations
-func createOptimizedHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: config.DefaultHTTPTimeout * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:          config.MaxIdleConns,
-			MaxIdleConnsPerHost:   config.MaxIdleConnsPerHost,
-			IdleConnTimeout:       config.IdleConnTimeout * time.Second,
-			TLSHandshakeTimeout:   config.TLSHandshakeTimeout * time.Second,
-			ExpectContinueTimeout: config.ExpectContinueTimeout * time.Second,
-		},
 	}
 }
 
@@ -429,9 +416,7 @@ func (w *WebSearchClient) ExtractURLs(ctx context.Context, urls []string) (strin
 	req.Header.Set("Content-Type", "application/json")
 
 	// Create a new client for this request without a timeout, but reusing the transport
-	extractClient := &http.Client{
-		Transport: w.httpClient.Transport,
-	}
+	extractClient := net.NewOptimizedClient(0)
 
 	// Make request
 	resp, err := extractClient.Do(req)
