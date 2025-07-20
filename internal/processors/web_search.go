@@ -27,8 +27,8 @@ type WebSearchClient struct {
 	formatter *WebSearchResultFormatter
 }
 
-// WebSearchRequest represents the request to the web search API
-type WebSearchRequest struct {
+// SearchRequest represents the request to the web search API's /search endpoint
+type SearchRequest struct {
 	Query         string `json:"query"`
 	MaxResults    int    `json:"max_results,omitempty"`
 	MaxCharPerURL int    `json:"max_char_per_url,omitempty"`
@@ -43,8 +43,8 @@ type ExtractedResult struct {
 	Error                 *string     `json:"error"`
 }
 
-// WebSearchResponse represents the response from the web search API
-type WebSearchResponse struct {
+// FinalResponsePayload represents the response from the /search endpoint
+type FinalResponsePayload struct {
 	QueryDetails struct {
 		Query               string `json:"query"`
 		MaxResultsRequested int    `json:"max_results_requested"`
@@ -60,14 +60,14 @@ type WebSearchDecision struct {
 	SearchQueries     []string `json:"search_queries,omitempty"`
 }
 
-// URLExtractRequest represents the request to the URL extract API
-type URLExtractRequest struct {
+// ExtractRequest represents the request to the /extract endpoint
+type ExtractRequest struct {
 	URLs          []string `json:"urls"`
 	MaxCharPerURL int      `json:"max_char_per_url,omitempty"`
 }
 
-// URLExtractResponse represents the response from the URL extract API
-type URLExtractResponse struct {
+// ExtractResponsePayload represents the response from the /extract endpoint
+type ExtractResponsePayload struct {
 	RequestDetails struct {
 		URLsRequested int `json:"urls_requested"`
 		URLsProcessed int `json:"urls_processed"`
@@ -330,7 +330,7 @@ func (w *WebSearchClient) SearchMultiple(ctx context.Context, queries []string) 
 // Search performs a web search and returns formatted results
 func (w *WebSearchClient) Search(ctx context.Context, query string) (string, error) {
 	// Prepare request
-	searchReq := WebSearchRequest{
+	searchReq := SearchRequest{
 		Query:         query,
 		MaxResults:    w.config.WebSearch.MaxResults,
 		MaxCharPerURL: w.config.WebSearch.MaxChars,
@@ -368,7 +368,7 @@ func (w *WebSearchClient) Search(ctx context.Context, query string) (string, err
 	}
 
 	// Parse response
-	var searchResp WebSearchResponse
+	var searchResp FinalResponsePayload
 	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -415,13 +415,13 @@ func (w *WebSearchClient) ExtractURLs(ctx context.Context, urls []string) (strin
 		}
 	}
 
-	// Validate URL limit as per API docs (maximum of 20 URLs per request)
-	if len(processedURLs) > 20 {
-		return "", fmt.Errorf("too many URLs after expanding playlists: maximum 20 URLs per request, got %d", len(processedURLs))
+	// Validate URL limit
+	if len(processedURLs) > w.config.WebSearch.MaxURLsPerExtract {
+		return "", fmt.Errorf("too many URLs after expanding playlists: maximum %d URLs per request, got %d", w.config.WebSearch.MaxURLsPerExtract, len(processedURLs))
 	}
 
 	// Prepare request
-	extractReq := URLExtractRequest{
+	extractReq := ExtractRequest{
 		URLs:          processedURLs,
 		MaxCharPerURL: w.config.WebSearch.MaxChars,
 	}
@@ -458,7 +458,7 @@ func (w *WebSearchClient) ExtractURLs(ctx context.Context, urls []string) (strin
 	}
 
 	// Parse response
-	var extractResp URLExtractResponse
+	var extractResp ExtractResponsePayload
 	if err := json.NewDecoder(resp.Body).Decode(&extractResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}

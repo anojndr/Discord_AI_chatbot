@@ -19,7 +19,8 @@ const (
 	DefaultWebSearchBaseURL    = "http://localhost:8086"
 	DefaultWebSearchMaxResults = 10
 	DefaultWebSearchMaxChars   = 50000 // Increased to prevent truncation of comments/replies
-	DefaultWebSearchModel      = "gemini/gemini-2.5-flash"
+	DefaultWebSearchModel           = "gemini/gemini-2.5-flash"
+	DefaultWebSearchMaxURLsPerExtract = 20
 
 	// Bot message handling
 	MaxMessageNodes = 500

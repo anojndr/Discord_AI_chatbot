@@ -41,12 +41,13 @@ type Config struct {
 
 	// Web Search settings
 	WebSearch struct {
-		BaseURL       string `yaml:"base_url"`
-		MaxResults    int    `yaml:"max_results"`
-		MaxChars      int    `yaml:"max_chars_per_url"`
-		Model         string `yaml:"model"`
-		DeciderPrompt string `yaml:"decider_prompt"`
-		YouTubeAPIKey string `yaml:"youtube_api_key"`
+		BaseURL           string `yaml:"base_url"`
+		MaxResults        int    `yaml:"max_results"`
+		MaxChars          int    `yaml:"max_chars_per_url"`
+		MaxURLsPerExtract int    `yaml:"max_urls_per_extract"`
+		Model             string `yaml:"model"`
+		DeciderPrompt     string `yaml:"decider_prompt"`
+		YouTubeAPIKey     string `yaml:"youtube_api_key"`
 	} `yaml:"web_search"`
 
 	// SerpAPI settings
@@ -323,6 +324,9 @@ func parseConfig(data []byte) (*Config, error) {
 	}
 	if config.WebSearch.MaxChars == 0 {
 		config.WebSearch.MaxChars = DefaultWebSearchMaxChars
+	}
+	if config.WebSearch.MaxURLsPerExtract == 0 {
+		config.WebSearch.MaxURLsPerExtract = DefaultWebSearchMaxURLsPerExtract
 	}
 	if config.WebSearch.Model == "" {
 		config.WebSearch.Model = DefaultWebSearchModel

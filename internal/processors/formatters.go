@@ -14,7 +14,7 @@ func NewWebSearchResultFormatter() *WebSearchResultFormatter {
 }
 
 // FormatSearchResults formats the search results into a readable string
-func (f *WebSearchResultFormatter) FormatSearchResults(resp *WebSearchResponse) string {
+func (f *WebSearchResultFormatter) FormatSearchResults(resp *FinalResponsePayload) string {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("Found %d results for query: %s\n\n",
@@ -50,7 +50,7 @@ func (f *WebSearchResultFormatter) FormatSearchResults(resp *WebSearchResponse) 
 }
 
 // FormatExtractResults formats the extract results into a readable string
-func (f *WebSearchResultFormatter) FormatExtractResults(resp *URLExtractResponse) string {
+func (f *WebSearchResultFormatter) FormatExtractResults(resp *ExtractResponsePayload) string {
 	var builder strings.Builder
 
 	builder.WriteString(fmt.Sprintf("📄 **Extracted content from %d URL(s):**\n\n", resp.RequestDetails.URLsProcessed))
@@ -94,6 +94,8 @@ func (f *WebSearchResultFormatter) ExtractContentFromData(data interface{}, sour
 	switch sourceType {
 	case "youtube":
 		return f.formatYouTubeData(dataMap)
+	case "youtube_playlist":
+		return f.formatYouTubePlaylistData(dataMap)
 	case "reddit":
 		return f.formatRedditData(dataMap)
 	case "pdf":
@@ -169,6 +171,28 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 
 	if score, ok := data["score"].(float64); ok {
 		parts = append(parts, fmt.Sprintf("Score: %.0f", score))
+	}
+
+	// Handle posts from subreddit/user pages
+	if posts, ok := data["posts"].([]interface{}); ok && len(posts) > 0 {
+		parts = append(parts, "Posts:")
+		for i, post := range posts {
+			if postMap, ok := post.(map[string]interface{}); ok {
+				var postParts []string
+				if postTitle, exists := postMap["title"].(string); exists {
+					postParts = append(postParts, fmt.Sprintf("%d. %s", i+1, postTitle))
+				}
+				if postAuthor, exists := postMap["author"].(string); exists {
+					postParts = append(postParts, fmt.Sprintf("(u/%s)", postAuthor))
+				}
+				if postScore, exists := postMap["score"].(float64); exists {
+					postParts = append(postParts, fmt.Sprintf("- %.0f points", postScore))
+				}
+				if len(postParts) > 0 {
+					parts = append(parts, fmt.Sprintf("  - %s", strings.Join(postParts, " ")))
+				}
+			}
+		}
 	}
 
 	// Handle structured comments array as per API docs
@@ -336,5 +360,38 @@ func (f *WebSearchResultFormatter) formatGenericData(data map[string]interface{}
 			parts = append(parts, fmt.Sprintf("%s: %s", key, str))
 		}
 	}
+	return strings.Join(parts, "\n")
+}
+
+// formatYouTubePlaylistData formats YouTube playlist data
+func (f *WebSearchResultFormatter) formatYouTubePlaylistData(data map[string]interface{}) string {
+	var parts []string
+
+	if title, ok := data["title"].(string); ok && title != "" {
+		parts = append(parts, fmt.Sprintf("Playlist Title: %s", title))
+	}
+
+	if channel, ok := data["channel_name"].(string); ok && channel != "" {
+		parts = append(parts, fmt.Sprintf("Channel: %s", channel))
+	}
+
+	if videos, ok := data["videos"].([]interface{}); ok && len(videos) > 0 {
+		parts = append(parts, "\nVideos in this playlist:")
+		for i, video := range videos {
+			if videoMap, ok := video.(map[string]interface{}); ok {
+				var videoParts []string
+				if videoTitle, exists := videoMap["title"].(string); exists {
+					videoParts = append(videoParts, fmt.Sprintf("%d. %s", i+1, videoTitle))
+				}
+				if videoID, exists := videoMap["video_id"].(string); exists {
+					videoParts = append(videoParts, fmt.Sprintf("(ID: %s)", videoID))
+				}
+				if len(videoParts) > 0 {
+					parts = append(parts, fmt.Sprintf("  - %s", strings.Join(videoParts, " ")))
+				}
+			}
+		}
+	}
+
 	return strings.Join(parts, "\n")
 }

@@ -163,6 +163,7 @@ web_search:
   base_url: "http://localhost:8086"
   max_results: 5
   max_chars_per_url: 5000
+  max_urls_per_extract: 20 # As per RAG-Forge API docs
   model: gemini/gemini-2.5-flash  # Model for web search decisions
   decider_prompt: |
     ## Task
