@@ -388,14 +388,41 @@ func (w *WebSearchClient) ExtractURLs(ctx context.Context, urls []string) (strin
 		return "", fmt.Errorf("no URLs provided")
 	}
 
+	var processedURLs []string
+	youtubeExtractor := utils.NewYouTubeURLExtractor()
+
+	for _, u := range urls {
+		if youtubeExtractor.IsYouTubeURL(u) {
+			_, isPlaylist := youtubeExtractor.ExtractPlaylistID(u)
+			if isPlaylist {
+				// It's a playlist, get all video URLs from it
+				videoURLs, err := utils.GetPlaylistVideoURLs(u, w.config.WebSearch.YouTubeAPIKey)
+				if err != nil {
+					log.Printf("Failed to get videos from playlist %s: %v", u, err)
+					// Add the playlist URL itself to be processed, which might result in an error
+					// but at least we acknowledge it was requested.
+					processedURLs = append(processedURLs, u)
+					continue
+				}
+				processedURLs = append(processedURLs, videoURLs...)
+			} else {
+				// It's a single video URL
+				processedURLs = append(processedURLs, u)
+			}
+		} else {
+			// Not a YouTube URL
+			processedURLs = append(processedURLs, u)
+		}
+	}
+
 	// Validate URL limit as per API docs (maximum of 20 URLs per request)
-	if len(urls) > 20 {
-		return "", fmt.Errorf("too many URLs: maximum 20 URLs per request, got %d", len(urls))
+	if len(processedURLs) > 20 {
+		return "", fmt.Errorf("too many URLs after expanding playlists: maximum 20 URLs per request, got %d", len(processedURLs))
 	}
 
 	// Prepare request
 	extractReq := URLExtractRequest{
-		URLs:          urls,
+		URLs:          processedURLs,
 		MaxCharPerURL: w.config.WebSearch.MaxChars,
 	}
 

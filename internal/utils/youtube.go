@@ -1,6 +1,10 @@
 package utils
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -210,4 +214,66 @@ func GetVideoIDFromURL(youtubeURL string) (string, bool) {
 func IsValidYouTubeURL(input string) bool {
 	extractor := NewYouTubeURLExtractor()
 	return extractor.IsYouTubeURL(input)
+}
+// GetPlaylistVideoURLs is a convenience function to extract video URLs from a playlist URL
+func GetPlaylistVideoURLs(playlistURL, apiKey string) ([]string, error) {
+	extractor := NewYouTubeURLExtractor()
+	playlistID, ok := extractor.ExtractPlaylistID(playlistURL)
+	if !ok {
+		return nil, fmt.Errorf("could not extract playlist ID from URL: %s", playlistURL)
+	}
+	return extractor.GetVideoURLsFromPlaylist(playlistID, apiKey)
+}
+
+// GetVideoURLsFromPlaylist fetches all video URLs from a given playlist ID.
+func (y *YouTubeURLExtractor) GetVideoURLsFromPlaylist(playlistID, apiKey string) ([]string, error) {
+	var videoURLs []string
+	nextPageToken := ""
+
+	for {
+		apiURL := fmt.Sprintf("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=%s&key=%s&pageToken=%s", playlistID, apiKey, nextPageToken)
+		
+		resp, err := http.Get(apiURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to make request to YouTube API: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("YouTube API returned non-200 status code: %d", resp.StatusCode)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		var playlistResponse struct {
+			NextPageToken string `json:"nextPageToken"`
+			Items         []struct {
+				Snippet struct {
+					ResourceID struct {
+						VideoID string `json:"videoId"`
+					} `json:"resourceId"`
+				} `json:"snippet"`
+			} `json:"items"`
+		}
+
+		if err := json.Unmarshal(body, &playlistResponse); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal JSON response: %w", err)
+		}
+
+		for _, item := range playlistResponse.Items {
+			if item.Snippet.ResourceID.VideoID != "" {
+				videoURLs = append(videoURLs, "https://www.youtube.com/watch?v="+item.Snippet.ResourceID.VideoID)
+			}
+		}
+
+		if playlistResponse.NextPageToken == "" {
+			break
+		}
+		nextPageToken = playlistResponse.NextPageToken
+	}
+
+	return videoURLs, nil
 }

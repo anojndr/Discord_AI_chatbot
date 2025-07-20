@@ -41,11 +41,12 @@ type Config struct {
 
 	// Web Search settings
 	WebSearch struct {
-		BaseURL    string `yaml:"base_url"`
-		MaxResults int    `yaml:"max_results"`
-		MaxChars   int    `yaml:"max_chars_per_url"`
-		Model      string `yaml:"model"`
+		BaseURL       string `yaml:"base_url"`
+		MaxResults    int    `yaml:"max_results"`
+		MaxChars      int    `yaml:"max_chars_per_url"`
+		Model         string `yaml:"model"`
 		DeciderPrompt string `yaml:"decider_prompt"`
+		YouTubeAPIKey string `yaml:"youtube_api_key"`
 	} `yaml:"web_search"`
 
 	// SerpAPI settings
