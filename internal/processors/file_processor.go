@@ -3,6 +3,7 @@ package processors
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/dslipak/pdf"
@@ -25,17 +26,22 @@ func NewFileProcessor() *FileProcessor {
 }
 
 // ProcessFile processes a file based on its content type and extracts text
-func (fp *FileProcessor) ProcessFile(data []byte, contentType, filename string) (string, error) {
+func (fp *FileProcessor) ProcessFile(data []byte, contentType, filename string) (string, bool, error) {
+	shouldProcessURLs := fp.shouldProcessURLs(contentType, filename)
+
 	switch {
 	case strings.HasPrefix(contentType, "application/pdf"):
-		return fp.processPDF(data)
+		text, err := fp.processPDF(data)
+		return text, shouldProcessURLs, err
 	case strings.HasPrefix(contentType, "text/"):
-		return fp.processTextFile(data)
+		text, err := fp.processTextFile(data)
+		return text, shouldProcessURLs, err
 	case fp.isTextFileByExtension(filename):
 		// For files that might be text but don't have proper content type
-		return fp.processTextFile(data)
+		text, err := fp.processTextFile(data)
+		return text, shouldProcessURLs, err
 	default:
-		return "", fmt.Errorf("unsupported file type: %s", contentType)
+		return "", false, fmt.Errorf("unsupported file type: %s", contentType)
 	}
 }
 
@@ -73,6 +79,29 @@ func (fp *FileProcessor) processPDF(data []byte) (string, error) {
 	}
 
 	return text, nil
+}
+
+// shouldProcessURLs determines if URLs should be processed for a given file type.
+func (fp *FileProcessor) shouldProcessURLs(contentType string, filename string) bool {
+	// By default, do not process URLs in text or PDF files
+	if strings.HasPrefix(contentType, "application/pdf") {
+		return false
+	}
+
+	// Check for common text file extensions
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".txt", ".log", ".csv", ".tsv":
+		return false
+	}
+
+	// For generic text content types, default to false unless specified otherwise
+	if strings.HasPrefix(contentType, "text/plain") {
+		return false
+	}
+
+	// For other file types, assume URLs should be processed
+	return true
 }
 
 // processTextFile processes text files with encoding detection

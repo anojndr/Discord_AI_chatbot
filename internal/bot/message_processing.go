@@ -61,6 +61,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	var hasBadAttachments bool
 	var urlExtractionErr, webSearchErr error
 	webSearchRequired := false
+	shouldProcessURLs := false
 	webSearchResultCount := 0
 
 	eg, gctx := errgroup.WithContext(context.Background())
@@ -95,7 +96,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 	// Task 3: Process Current Message Attachments
 	eg.Go(func() error {
-		currentImages, currentAudio, currentText, currentBad, err := processors.ProcessAttachments(gctx, msg.Attachments, b.fileProcessor)
+		currentImages, currentAudio, currentText, currentBad, currentShouldProcessURLs, err := processors.ProcessAttachments(gctx, msg.Attachments, b.fileProcessor)
 		mu.Lock()
 		defer mu.Unlock()
 		images = append(images, currentImages...)
@@ -106,6 +107,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			attachmentText = "**📎 Current Attachments:**\n" + currentText
 		}
 		hasBadAttachments = hasBadAttachments || currentBad
+		shouldProcessURLs = shouldProcessURLs || currentShouldProcessURLs
 		if err != nil {
 			return fmt.Errorf("failed to process current attachments: %w", err)
 		}
@@ -117,7 +119,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	if isCurrentMessage && parentMsg != nil && len(parentMsg.Attachments) > 0 && !isDirectReply {
 		eg.Go(func() error {
 			log.Printf("Processing %d attachments from parent message for non-reply context", len(parentMsg.Attachments))
-			parentImages, parentAudio, parentText, parentBad, err := processors.ProcessAttachments(gctx, parentMsg.Attachments, b.fileProcessor)
+			parentImages, parentAudio, parentText, parentBad, parentShouldProcessURLs, err := processors.ProcessAttachments(gctx, parentMsg.Attachments, b.fileProcessor)
 			mu.Lock()
 			defer mu.Unlock()
 			images = append(parentImages, images...)
@@ -126,6 +128,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 				attachmentText = "**📎 Referenced Files (from previous message):**\n" + parentText + "\n\n" + attachmentText
 			}
 			hasBadAttachments = hasBadAttachments || parentBad
+			shouldProcessURLs = shouldProcessURLs || parentShouldProcessURLs
 			if err != nil {
 				return fmt.Errorf("failed to process parent attachments: %w", err)
 			}
@@ -135,7 +138,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 	// Task 5: URL Content Extraction
 	contentForURLExtraction := strings.Join([]string{cleanedContent, utils.ExtractEmbedText(msg.Embeds)}, "\n")
-	if contentForURLExtraction != "" && !isAskChannelQuery {
+	if contentForURLExtraction != "" && !isAskChannelQuery && shouldProcessURLs {
 		eg.Go(func() error {
 			detectedURLs := processors.DetectURLs(contentForURLExtraction)
 			if len(detectedURLs) > 0 {

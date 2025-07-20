@@ -17,7 +17,7 @@ import (
 )
 
 // ProcessAttachments processes Discord message attachments and returns images, audio, and text content
-func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAttachment, fileProcessor *FileProcessor) ([]messaging.ImageContent, []messaging.AudioContent, string, bool, error) {
+func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAttachment, fileProcessor *FileProcessor) ([]messaging.ImageContent, []messaging.AudioContent, string, bool, bool, error) {
 	// Launch one goroutine per attachment without an artificial semaphore limit.
 
 	// We need to preserve the order of attachments so that they appear in the
@@ -30,12 +30,13 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 		audio messaging.AudioContent
 		text  string
 		isBad bool
+		shouldProcessURLs bool
 		err   error
 	}
 
 	// Early exit if no attachments
 	if len(attachments) == 0 {
-		return nil, nil, "", false, nil
+		return nil, nil, "", false, false, nil
 	}
 
 	resultsChan := make(chan indexedResult, len(attachments))
@@ -98,7 +99,7 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 			}
 
 			// Text or PDF attachment -> process via FileProcessor
-			extractedText, err := fileProcessor.ProcessFile(data, attachment.ContentType, attachment.Filename)
+			extractedText, shouldProcessURLs, err := fileProcessor.ProcessFile(data, attachment.ContentType, attachment.Filename)
 			if err != nil {
 				resultsChan <- indexedResult{idx: index, isBad: true}
 				return
@@ -113,7 +114,7 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 			case isTextByExt:
 				fileTypeInfo = fmt.Sprintf("**📄 File: %s**\n", attachment.Filename)
 			}
-			resultsChan <- indexedResult{idx: index, text: fileTypeInfo + extractedText}
+			resultsChan <- indexedResult{idx: index, text: fileTypeInfo + extractedText, shouldProcessURLs: shouldProcessURLs}
 		}(idx, att)
 	}
 
@@ -133,6 +134,7 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 		orderedAudio      []messaging.AudioContent
 		textParts         []string
 		hasBadAttachments bool
+		shouldProcessURLs bool
 		firstErr          error
 	)
 
@@ -152,11 +154,14 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 		if res.text != "" {
 			textParts = append(textParts, res.text)
 		}
+		if res.shouldProcessURLs {
+			shouldProcessURLs = true
+		}
 	}
 
 	if firstErr != nil {
-		return nil, nil, "", hasBadAttachments, firstErr
+		return nil, nil, "", hasBadAttachments, false, firstErr
 	}
 
-	return orderedImages, orderedAudio, strings.Join(textParts, "\n\n"), hasBadAttachments, nil
+	return orderedImages, orderedAudio, strings.Join(textParts, "\n\n"), hasBadAttachments, shouldProcessURLs, nil
 }
