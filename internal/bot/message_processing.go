@@ -138,7 +138,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 	// Task 5: URL Content Extraction
 	contentForURLExtraction := strings.Join([]string{cleanedContent, utils.ExtractEmbedText(msg.Embeds)}, "\n")
-	if contentForURLExtraction != "" && !isAskChannelQuery && shouldProcessURLs {
+	if contentForURLExtraction != "" && !isAskChannelQuery {
 		eg.Go(func() error {
 			detectedURLs := processors.DetectURLs(contentForURLExtraction)
 			if len(detectedURLs) > 0 {
