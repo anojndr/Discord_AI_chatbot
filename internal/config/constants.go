@@ -16,7 +16,7 @@ const (
 	MaxStatusMessageLength = 128
 
 	// Web search defaults (aligned with RAG-Forge API documentation)
-	DefaultWebSearchBaseURL    = "http://localhost:8080"
+	DefaultWebSearchBaseURL    = "http://localhost:8086"
 	DefaultWebSearchMaxResults = 10
 	DefaultWebSearchMaxChars   = 50000 // Increased to prevent truncation of comments/replies
 	DefaultWebSearchModel      = "gemini/gemini-2.5-flash"

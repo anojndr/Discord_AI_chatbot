@@ -98,10 +98,12 @@ func (f *WebSearchResultFormatter) ExtractContentFromData(data interface{}, sour
 		return f.formatRedditData(dataMap)
 	case "pdf":
 		return f.formatPDFData(dataMap)
-	case "webpage":
+	case "webpage", "webpage_js":
 		return f.formatWebpageData(dataMap)
 	case "twitter":
 		return f.formatTwitterData(dataMap)
+	case "twitter_profile":
+		return f.formatTwitterProfileData(dataMap)
 	default:
 		return f.formatGenericData(dataMap)
 	}
@@ -242,8 +244,8 @@ func (f *WebSearchResultFormatter) formatWebpageData(data map[string]interface{}
 	return strings.Join(parts, "\n")
 }
 
-// formatTwitterData formats Twitter/X data according to API documentation
-func (f *WebSearchResultFormatter) formatTwitterData(data map[string]interface{}) string {
+// formatSingleTweetData formats a single Twitter/X post, making it reusable
+func (f *WebSearchResultFormatter) formatSingleTweetData(data map[string]interface{}) string {
 	var parts []string
 
 	if tweetContent, ok := data["tweet_content"].(string); ok && tweetContent != "" {
@@ -287,6 +289,37 @@ func (f *WebSearchResultFormatter) formatTwitterData(data map[string]interface{}
 				}
 				if len(commentParts) > 0 {
 					parts = append(parts, fmt.Sprintf("  - %s", strings.Join(commentParts, " ")))
+				}
+			}
+		}
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+// formatTwitterData formats Twitter/X data according to API documentation
+func (f *WebSearchResultFormatter) formatTwitterData(data map[string]interface{}) string {
+	return f.formatSingleTweetData(data)
+}
+
+// formatTwitterProfileData formats Twitter/X profile data
+func (f *WebSearchResultFormatter) formatTwitterProfileData(data map[string]interface{}) string {
+	var parts []string
+
+	if profileURL, ok := data["profile_url"].(string); ok && profileURL != "" {
+		parts = append(parts, fmt.Sprintf("Profile: %s", profileURL))
+	}
+
+	if tweets, ok := data["latest_tweets"].([]interface{}); ok && len(tweets) > 0 {
+		parts = append(parts, "\nLatest Tweets:")
+		for i, tweet := range tweets {
+			if tweetMap, ok := tweet.(map[string]interface{}); ok {
+				parts = append(parts, fmt.Sprintf("\n--- Tweet %d ---", i+1))
+				if tweetURL, ok := tweetMap["url"].(string); ok && tweetURL != "" {
+					parts = append(parts, fmt.Sprintf("URL: %s", tweetURL))
+				}
+				if tweetData, ok := tweetMap["data"].(map[string]interface{}); ok {
+					parts = append(parts, f.formatSingleTweetData(tweetData))
 				}
 			}
 		}
