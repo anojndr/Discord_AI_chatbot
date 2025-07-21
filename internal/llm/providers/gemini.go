@@ -328,7 +328,7 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 			}
 
 			// Check if this is an image generation model
-			isImageGenModel := modelName == "gemini-2.0-flash-preview-image-generation"
+			isImageGenModel := modelName == "gemini-2.0-flash-preview-image-generation" || strings.HasPrefix(modelName, "imagen")
 			if isImageGenModel {
 				// For image generation models, set response modalities to include both text and images
 				config.ResponseModalities = []string{"TEXT", "IMAGE"}
@@ -434,6 +434,78 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 	return responseChan, nil
 }
 
+// GenerateImage generates an image using a Gemini image generation model (e.g., Imagen).
+func (g *GeminiProvider) GenerateImage(ctx context.Context, model string, prompt string, isAPIKeyError func(error) bool, is503Error func(error) bool, retryWith503Backoff func(context.Context, func() error) error, isInternalError func(error) bool, retryWithInternalBackoff func(context.Context, func() error) error) ([]*genai.GeneratedImage, error) {
+	parts := strings.SplitN(model, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid model format: %s (expected gemini/model)", model)
+	}
+
+	providerName := parts[0]
+	modelName := parts[1]
+
+	provider, exists := g.config.Providers[providerName]
+	if !exists {
+		return nil, fmt.Errorf("unknown provider: %s", providerName)
+	}
+
+	availableKeys := provider.GetAPIKeys()
+	if len(availableKeys) == 0 {
+		return nil, fmt.Errorf("no API keys configured for provider: %s", providerName)
+	}
+
+	if _, exists := g.config.Models[model]; !exists {
+		return nil, fmt.Errorf("model parameters not found for: %s", model)
+	}
+
+	imageConfig := &genai.GenerateImagesConfig{
+		PersonGeneration: genai.PersonGenerationAllowAll,
+	}
+
+	logging.LogToFile("Starting Gemini Image Generation: Model=%s, Provider=%s", modelName, providerName)
+
+	maxRetries := len(availableKeys)
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		apiKey, err := g.apiKeyManager.GetNextAPIKey(ctx, providerName, availableKeys)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get API key: %w", err)
+		}
+
+		var client *genai.Client
+		err = retryWithInternalBackoff(ctx, func() error {
+			return retryWith503Backoff(ctx, func() error {
+				var clientErr error
+				client, clientErr = genai.NewClient(ctx, &genai.ClientConfig{
+					APIKey: apiKey,
+				})
+				return clientErr
+			})
+		})
+
+		if err != nil {
+			if isAPIKeyError(err) {
+				if err := g.apiKeyManager.MarkKeyAsBad(ctx, providerName, apiKey, err.Error()); err != nil {
+					log.Printf("Failed to mark API key as bad: %v", err)
+				}
+				log.Printf("API key issue detected, trying next key: %v", err)
+				continue
+			}
+			return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+		}
+
+		response, err := client.Models.GenerateImages(ctx, modelName, prompt, imageConfig)
+		if err != nil {
+			if isAPIKeyError(err) || is503Error(err) || isInternalError(err) {
+				log.Printf("Retriable error during image generation: %v", err)
+				continue
+			}
+			return nil, fmt.Errorf("failed to generate images: %w", err)
+		}
+		return response.GeneratedImages, nil
+	}
+	return nil, fmt.Errorf("all API keys failed for provider: %s", providerName)
+}
+
 // GenerateVideo generates a video using a Gemini video generation model (e.g., Veo).
 // It handles the long-running operation by polling for completion.
 func (g *GeminiProvider) GenerateVideo(ctx context.Context, model string, prompt string, isAPIKeyError func(error) bool, is503Error func(error) bool, retryWith503Backoff func(context.Context, func() error) error, isInternalError func(error) bool, retryWithInternalBackoff func(context.Context, func() error) error) ([]byte, error) {
@@ -455,19 +527,12 @@ func (g *GeminiProvider) GenerateVideo(ctx context.Context, model string, prompt
 		return nil, fmt.Errorf("no API keys configured for provider: %s", providerName)
 	}
 
-	modelParams, exists := g.config.Models[model]
-	if !exists {
+	if _, exists := g.config.Models[model]; !exists {
 		return nil, fmt.Errorf("model parameters not found for: %s", model)
 	}
 
-	videoConfig := &genai.GenerateVideosConfig{}
-	if modelParams.VideoGeneration != nil {
-		if modelParams.VideoGeneration.AspectRatio != "" {
-			videoConfig.AspectRatio = modelParams.VideoGeneration.AspectRatio
-		}
-		if modelParams.VideoGeneration.PersonGeneration != "" {
-			videoConfig.PersonGeneration = modelParams.VideoGeneration.PersonGeneration
-		}
+	videoConfig := &genai.GenerateVideosConfig{
+		PersonGeneration: "allow_all",
 	}
 
 	logging.LogToFile("Starting Gemini Video Generation: Model=%s, Provider=%s", modelName, providerName)

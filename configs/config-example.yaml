@@ -17,6 +17,10 @@ status_message: "Serving LLMs on Discord"
 # Default model for new users
 default_model: gemini/gemini-2.5-flash
 
+# Generative models
+image_generation_model: "gemini/imagen-4.0-ultra-generate-preview-06-06"
+video_generation_model: "gemini/veo-3.0-generate-preview"
+
 # System prompt (can be overridden by users with /systemprompt)
 # {date} and {time} placeholders will be replaced with current date/time
 system_prompt: |
@@ -95,14 +99,6 @@ models:
     token_limit: 1000000
     temperature: 1.0
     thinking_budget: 0    # Disable thinking for faster responses
-  "gemini/gemini-2.0-flash-preview-image-generation":
-    token_limit: 32000
-    temperature: 1.0
-  "gemini/veo-3.0-generate-preview":
-    token_limit: 32000 # This is a placeholder, not used for video generation
-    video_generation:
-      aspect_ratio: "16:9"
-      person_generation: "allow_all"
 
   # xAI
   "x-ai/grok-3":

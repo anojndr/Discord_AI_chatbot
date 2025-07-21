@@ -25,6 +25,9 @@ type Config struct {
 	MaxImages   int `yaml:"max_images"`
 	MaxMessages int `yaml:"max_messages"`
 
+	// Generative models
+	ImageGenerationModel string `yaml:"image_generation_model"`
+	VideoGenerationModel string `yaml:"video_generation_model"`
 
 	// Behavior settings
 	UsePlainResponses bool `yaml:"use_plain_responses"`
@@ -249,14 +252,7 @@ type ModelParams struct {
 	SearchParameters map[string]any `yaml:"search_parameters,omitempty"`
 	ThinkingBudget   *int32         `yaml:"thinking_budget,omitempty"`
 	TokenLimit       *int           `yaml:"token_limit,omitempty"`
-	VideoGeneration  *VideoGeneration `yaml:"video_generation,omitempty"`
 	ExtraParams      map[string]any `yaml:",inline"`
-}
-
-// VideoGeneration represents video generation specific parameters
-type VideoGeneration struct {
-	AspectRatio      string `yaml:"aspect_ratio,omitempty"`
-	PersonGeneration string `yaml:"person_generation,omitempty"`
 }
 
 // LoadConfig loads configuration from YAML file

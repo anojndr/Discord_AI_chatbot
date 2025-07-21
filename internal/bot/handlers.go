@@ -142,6 +142,18 @@ func (b *Bot) registerCommands() error {
 				},
 			},
 		},
+		{
+			Name:        "generateimage",
+			Description: "Generate an image using Imagen",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "prompt",
+					Description: "The prompt for the image",
+					Required:    true,
+				},
+			},
+		},
 	}
 
 	for _, cmd := range commands {

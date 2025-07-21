@@ -27,6 +27,8 @@ func (b *Bot) handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionC
 		b.handleClearDatabaseCommand(s, i)
 	case "generatevideo":
 		b.handleGenerateVideoCommand(s, i)
+	case "generateimage":
+		b.handleGenerateImageCommand(s, i)
 	}
 }
 
@@ -564,7 +566,21 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
-		videoData, err := b.llmClient.GenerateVideo(ctx, "gemini/veo-3.0-generate-preview", prompt)
+		b.configMutex.RLock()
+		videoModel := b.config.VideoGenerationModel
+		b.configMutex.RUnlock()
+
+		if videoModel == "" {
+			errorContent := "❌ Video generation model not configured."
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &errorContent,
+			}); err != nil {
+				log.Printf("Failed to edit interaction response with error: %v", err)
+			}
+			return
+		}
+
+		videoData, err := b.llmClient.GenerateVideo(ctx, videoModel, prompt)
 		if err != nil {
 			log.Printf("Failed to generate video: %v", err)
 			errorContent := fmt.Sprintf("❌ Failed to generate video: %v", err)
@@ -588,6 +604,99 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 			},
 		}); err != nil {
 			log.Printf("Failed to edit interaction response with video: %v", err)
+		}
+	}()
+}
+
+// handleGenerateImageCommand handles the /generateimage slash command
+func (b *Bot) handleGenerateImageCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	if len(data.Options) == 0 {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Please provide a prompt for image generation.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	prompt := data.Options[0].StringValue()
+
+	// Acknowledge the interaction immediately
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	}); err != nil {
+		log.Printf("Failed to send deferred response: %v", err)
+		errorContent := "❌ An error occurred while processing your request."
+		_, _ = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &errorContent,
+		})
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		// Get the image generation model from config
+		b.configMutex.RLock()
+		imageModel := b.config.ImageGenerationModel
+		b.configMutex.RUnlock()
+
+		if imageModel == "" {
+			errorContent := "❌ No image generation model found in configuration."
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &errorContent,
+			}); err != nil {
+				log.Printf("Failed to edit interaction response with error: %v", err)
+			}
+			return
+		}
+
+		images, err := b.llmClient.GenerateImage(ctx, imageModel, prompt)
+		if err != nil {
+			log.Printf("Failed to generate image: %v", err)
+			errorContent := fmt.Sprintf("❌ Failed to generate image: %v", err)
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &errorContent,
+			}); err != nil {
+				log.Printf("Failed to edit interaction response with error: %v", err)
+			}
+			return
+		}
+
+		if len(images) == 0 {
+			noImageContent := "❌ No images were generated."
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &noImageContent,
+			}); err != nil {
+				log.Printf("Failed to edit interaction response with no image message: %v", err)
+			}
+			return
+		}
+
+		var files []*discordgo.File
+		for i, img := range images {
+			if img.Image != nil && len(img.Image.ImageBytes) > 0 {
+				files = append(files, &discordgo.File{
+					Name:        fmt.Sprintf("image_%d.png", i+1),
+					ContentType: "image/png",
+					Reader:      strings.NewReader(string(img.Image.ImageBytes)),
+				})
+			}
+		}
+
+		successContent := fmt.Sprintf("✅ Generated %d images for prompt: `%s`", len(files), prompt)
+		if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &successContent,
+			Files:   files,
+		}); err != nil {
+			log.Printf("Failed to edit interaction response with image: %v", err)
 		}
 	}()
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2"
+	"google.golang.org/genai"
 	openai "github.com/sashabaranov/go-openai"
 
 	"DiscordAIChatbot/internal/config"
@@ -111,6 +112,15 @@ func (c *LLMClient) GenerateVideo(ctx context.Context, model string, prompt stri
 	}
 
 	return c.geminiProvider.GenerateVideo(ctx, model, prompt, c.isAPIKeyError, c.is503Error, c.retryWith503Backoff, c.isInternalError, c.retryWithInternalBackoff)
+}
+
+// GenerateImage generates an image using the appropriate provider.
+func (c *LLMClient) GenerateImage(ctx context.Context, model string, prompt string) ([]*genai.GeneratedImage, error) {
+	if !c.isGeminiModel(model) {
+		return nil, fmt.Errorf("image generation is only supported for Gemini models")
+	}
+
+	return c.geminiProvider.GenerateImage(ctx, model, prompt, c.isAPIKeyError, c.is503Error, c.retryWith503Backoff, c.isInternalError, c.retryWithInternalBackoff)
 }
 
 // getOpenAIClient gets a client from the cache or creates a new one if it doesn't exist
