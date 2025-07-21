@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"DiscordAIChatbot/internal/storage"
+	"DiscordAIChatbot/internal/uploader"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -563,8 +564,7 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
+		ctx := context.Background()
 
 		b.configMutex.RLock()
 		videoModel := b.config.VideoGenerationModel
@@ -592,18 +592,42 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 			return
 		}
 
-		successContent := "✅ Video generated successfully!"
-		if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &successContent,
-			Files: []*discordgo.File{
-				{
-					Name:        "video.mp4",
-					ContentType: "video/mp4",
-					Reader:      strings.NewReader(string(videoData)),
+		// Check video size
+		if len(videoData) > 9*1024*1024 { // 9 MB
+			// Upload to Catbox
+			url, err := uploader.UploadToCatbox("video.mp4", videoData)
+			if err != nil {
+				log.Printf("Failed to upload video to Catbox: %v", err)
+				errorContent := fmt.Sprintf("❌ Failed to upload video to Catbox: %v", err)
+				if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+					Content: &errorContent,
+				}); err != nil {
+					log.Printf("Failed to edit interaction response with error: %v", err)
+				}
+				return
+			}
+
+			successContent := fmt.Sprintf("✅ Video generated and uploaded to Catbox: %s", url)
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &successContent,
+			}); err != nil {
+				log.Printf("Failed to edit interaction response with Catbox URL: %v", err)
+			}
+		} else {
+			// Send directly to Discord
+			successContent := "✅ Video generated successfully!"
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &successContent,
+				Files: []*discordgo.File{
+					{
+						Name:        "video.mp4",
+						ContentType: "video/mp4",
+						Reader:      strings.NewReader(string(videoData)),
+					},
 				},
-			},
-		}); err != nil {
-			log.Printf("Failed to edit interaction response with video: %v", err)
+			}); err != nil {
+				log.Printf("Failed to edit interaction response with video: %v", err)
+			}
 		}
 	}()
 }

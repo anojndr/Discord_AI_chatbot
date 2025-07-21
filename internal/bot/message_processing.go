@@ -14,6 +14,7 @@ import (
 
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/processors"
+	"DiscordAIChatbot/internal/uploader"
 	"DiscordAIChatbot/internal/utils"
 )
 
@@ -326,8 +327,7 @@ func (b *Bot) handleVeoGeneration(s *discordgo.Session, msg *discordgo.Message, 
 	go func() {
 		thinkingMsg, _ := s.ChannelMessageSend(msg.ChannelID, "Generating video with Veo, please wait...")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
+		ctx := context.Background()
 
 		videoData, err := b.llmClient.GenerateVideo(ctx, "gemini/veo-3.0-generate-preview", prompt)
 
@@ -345,18 +345,36 @@ func (b *Bot) handleVeoGeneration(s *discordgo.Session, msg *discordgo.Message, 
 			return
 		}
 
-		if _, err := s.ChannelMessageSendComplex(msg.ChannelID, &discordgo.MessageSend{
-			Content: "✅ Video generated successfully!",
-			Files: []*discordgo.File{
-				{
-					Name:        "video.mp4",
-					ContentType: "video/mp4",
-					Reader:      strings.NewReader(string(videoData)),
+		// Check video size
+		if len(videoData) > 9*1024*1024 { // 9 MB
+			// Upload to Catbox
+			url, err := uploader.UploadToCatbox("video.mp4", videoData)
+			if err != nil {
+				log.Printf("Failed to upload video to Catbox: %v", err)
+				if _, err := s.ChannelMessageSend(msg.ChannelID, fmt.Sprintf("❌ Failed to upload video to Catbox: %v", err)); err != nil {
+					log.Printf("Failed to send Catbox upload failure message: %v", err)
+				}
+				return
+			}
+
+			if _, err := s.ChannelMessageSend(msg.ChannelID, fmt.Sprintf("✅ Video generated and uploaded to Catbox: %s", url)); err != nil {
+				log.Printf("Failed to send Catbox URL message: %v", err)
+			}
+		} else {
+			// Send directly to Discord
+			if _, err := s.ChannelMessageSendComplex(msg.ChannelID, &discordgo.MessageSend{
+				Content: "✅ Video generated successfully!",
+				Files: []*discordgo.File{
+					{
+						Name:        "video.mp4",
+						ContentType: "video/mp4",
+						Reader:      strings.NewReader(string(videoData)),
+					},
 				},
-			},
-			Reference: msg.Reference(),
-		}); err != nil {
-			log.Printf("Failed to send video message: %v", err)
+				Reference: msg.Reference(),
+			}); err != nil {
+				log.Printf("Failed to send video message: %v", err)
+			}
 		}
 	}()
 }
