@@ -169,9 +169,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			}
 
 			chatHistory := b.buildChatHistoryForWebSearch(s, msg)
-			b.configMutex.RLock()
-			cfg := b.config
-			b.configMutex.RUnlock()
+			cfg := b.config.Load()
 			userSystemPrompt := b.userPrefs.GetUserSystemPrompt(gctx, msg.Author.ID)
 			systemPrompt := cfg.SystemPrompt
 			if userSystemPrompt != "" {
@@ -435,9 +433,7 @@ func (b *Bot) handleGoogleLensQuery(ctx context.Context, msg *discordgo.Message,
 func (b *Bot) handleAskChannelQuery(ctx context.Context, s *discordgo.Session, msg *discordgo.Message, channelQuery string) (string, error) {
 	log.Printf("Detected askchannel query: %s", channelQuery)
 
-	b.configMutex.RLock()
-	cfg := b.config
-	b.configMutex.RUnlock()
+	cfg := b.config.Load()
 
 	userModel := b.userPrefs.GetUserModel(context.Background(), msg.Author.ID, cfg.GetDefaultModel())
 	modelTokenLimit := cfg.GetModelTokenLimit(userModel)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -29,7 +30,7 @@ var ()
 // It maintains the bot's configuration, session state, and various service clients.
 type Bot struct {
 	session          *discordgo.Session
-	config           *config.Config
+	config           atomic.Pointer[config.Config]
 	nodeManager      *messaging.MsgNodeManager
 	permChecker      *auth.PermissionChecker
 	llmClient        *llm.LLMClient
@@ -44,7 +45,6 @@ type Bot struct {
 	httpClient       *http.Client
 	lastTaskTime     time.Time
 	mu               sync.RWMutex
-	configMutex      sync.RWMutex
 	healthServer     *http.Server
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
@@ -75,7 +75,6 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 	webSearchHTTPClient := net.NewOptimizedClientWithNoTimeout()
 	bot := &Bot{
 		session:          session,
-		config:           cfg,
 		nodeManager:      messaging.NewMsgNodeManager(config.MaxMessageNodes),
 		permChecker:      auth.NewPermissionChecker(cfg),
 		llmClient:        llm.NewLLMClient(cfg, apiKeyManager, httpClient),
@@ -93,6 +92,7 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 		httpClient:       httpClient,
 		messageJobs:      make(chan *discordgo.MessageCreate, 100), // Buffered channel
 	}
+	bot.config.Store(cfg)
 
 	// Configure Discord session
 	session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
@@ -205,9 +205,7 @@ func (b *Bot) watchConfig() {
 					if err != nil {
 						log.Println("ERROR: Failed to reload config:", err)
 					} else {
-						b.configMutex.Lock()
-						b.config = newCfg
-						b.configMutex.Unlock()
+						b.config.Store(newCfg) // Atomically swap the pointer
 						log.Println("Config reloaded successfully.")
 					}
 				}

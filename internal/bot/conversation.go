@@ -20,10 +20,8 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 	var messages []messaging.OpenAIMessage
 	var warnings []string
 
-	// Thread-safe access to config
-	b.configMutex.RLock()
-	config := b.config
-	b.configMutex.RUnlock()
+	// Atomically load config
+	config := b.config.Load()
 
 	currentMsg := m.Message
 	maxMessages := config.MaxMessages

@@ -18,11 +18,10 @@ import (
 func (b *Bot) onReady(s *discordgo.Session, event *discordgo.Ready) {
 	log.Printf("Bot is ready! Logged in as %s", event.User.String())
 
-	// Thread-safe access to config
-	b.configMutex.RLock()
-	clientID := b.config.ClientID
-	statusMessage := b.config.StatusMessage
-	b.configMutex.RUnlock()
+	// Atomically load config
+	cfg := b.config.Load()
+	clientID := cfg.ClientID
+	statusMessage := cfg.StatusMessage
 
 	// Set custom activity (now that websocket connection is established)
 	if statusMessage == "" {
@@ -321,10 +320,9 @@ func (b *Bot) createThreadForResponse(s *discordgo.Session, originalMsg *discord
 
 // handleMessage processes a message and generates LLM response
 func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Check if threads are enabled and determine target channel early
-	b.configMutex.RLock()
-	useThreads := b.config.UseThreads
-	b.configMutex.RUnlock()
+	// Atomically load config
+	cfg := b.config.Load()
+	useThreads := cfg.UseThreads
 
 	targetChannelID := m.ChannelID
 	messageRef := b.getProperMessageReference(m)
@@ -371,9 +369,8 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}()
 
 	// Get user's preferred model
-	b.configMutex.RLock()
-	currentModel := b.userPrefs.GetUserModel(context.Background(), m.Author.ID, b.config.GetDefaultModel())
-	b.configMutex.RUnlock()
+	cfg = b.config.Load()
+	currentModel := b.userPrefs.GetUserModel(context.Background(), m.Author.ID, cfg.GetDefaultModel())
 
 	// Parse provider and model
 	parts := strings.SplitN(currentModel, "/", 2)
@@ -405,21 +402,19 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// Get user's custom system prompt or fall back to default
 	userSystemPrompt := b.userPrefs.GetUserSystemPrompt(context.Background(), m.Author.ID)
-	b.configMutex.RLock()
-	systemPrompt := b.config.SystemPrompt
+	cfg = b.config.Load()
+	systemPrompt := cfg.SystemPrompt
 	if userSystemPrompt != "" {
 		systemPrompt = userSystemPrompt
 	}
-	b.configMutex.RUnlock()
 
 	// Add system prompt
 	messages = b.llmClient.AddSystemPrompt(messages, systemPrompt, acceptUsernames)
 
 	// Apply context management before sending to LLM
 	ctx := context.Background()
-	b.configMutex.RLock()
-	contextManager := contextmgr.NewContextManager(b.llmClient, b.config)
-	b.configMutex.RUnlock()
+	cfg = b.config.Load()
+	contextManager := contextmgr.NewContextManager(b.llmClient, cfg)
 	
 	managedResult, err := contextManager.ManageContext(ctx, messages, currentModel)
 	if err != nil {

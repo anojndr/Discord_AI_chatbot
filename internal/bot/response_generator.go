@@ -123,10 +123,9 @@ processStream:
 		log.Printf("Using fallback model %s for response", actualModel)
 	}
 
-	// Thread-safe access to config
-	b.configMutex.RLock()
-	usePlainResponses := b.config.UsePlainResponses
-	b.configMutex.RUnlock()
+	// Atomically load config
+	cfg := b.config.Load()
+	usePlainResponses := cfg.UsePlainResponses
 
 	maxLength := utils.MaxMessageLength
 	if usePlainResponses {
@@ -153,9 +152,7 @@ processStream:
 
 	// Create initial embed with warnings and footer info
 	// Token usage info
-	b.configMutex.RLock()
-	cfg := b.config
-	b.configMutex.RUnlock()
+	cfg = b.config.Load()
 
 	tokenLimit := utils.DefaultTokenLimit
 	if params, ok := cfg.Models[model]; ok && params.TokenLimit != nil {

@@ -45,10 +45,8 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 		userID = i.Member.User.ID
 	}
 
-	// Thread-safe access to config
-	b.configMutex.RLock()
-	config := b.config
-	b.configMutex.RUnlock()
+	// Atomically load config
+	config := b.config.Load()
 
 	// Check if config is nil (safety check)
 	if config == nil {
@@ -229,10 +227,8 @@ func (b *Bot) handleAPIKeysCommand(s *discordgo.Session, i *discordgo.Interactio
 		userID = i.Member.User.ID
 	}
 
-	// Thread-safe access to config
-	b.configMutex.RLock()
-	config := b.config
-	b.configMutex.RUnlock()
+	// Atomically load config
+	config := b.config.Load()
 
 	// Check if config is nil (safety check)
 	if config == nil {
@@ -376,10 +372,8 @@ func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.Interac
 		partial = data.Options[0].StringValue()
 	}
 
-	// Thread-safe access to config
-	b.configMutex.RLock()
-	config := b.config
-	b.configMutex.RUnlock()
+	// Atomically load config
+	config := b.config.Load()
 
 	// Check if config is nil (safety check)
 	if config == nil {
@@ -485,10 +479,8 @@ func (b *Bot) handleClearDatabaseCommand(s *discordgo.Session, i *discordgo.Inte
 		return
 	}
 
-	// Thread-safe access to config
-	b.configMutex.RLock()
-	config := b.config
-	b.configMutex.RUnlock()
+	// Atomically load config
+	config := b.config.Load()
 
 	// Check if config is nil (safety check)
 	if config == nil {
@@ -566,9 +558,8 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 	go func() {
 		ctx := context.Background()
 
-		b.configMutex.RLock()
-		videoModel := b.config.VideoGenerationModel
-		b.configMutex.RUnlock()
+		config := b.config.Load()
+		videoModel := config.VideoGenerationModel
 
 		if videoModel == "" {
 			errorContent := "❌ Video generation model not configured."
@@ -668,9 +659,8 @@ func (b *Bot) handleGenerateImageCommand(s *discordgo.Session, i *discordgo.Inte
 		defer cancel()
 
 		// Get the image generation model from config
-		b.configMutex.RLock()
-		imageModel := b.config.ImageGenerationModel
-		b.configMutex.RUnlock()
+		config := b.config.Load()
+		imageModel := config.ImageGenerationModel
 
 		if imageModel == "" {
 			errorContent := "❌ No image generation model found in configuration."
