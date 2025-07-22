@@ -139,7 +139,11 @@ func (c *MessageNodeCache) saveNodes(ctx context.Context, nodes []*messaging.Pro
 	if err != nil {
 		return fmt.Errorf("failed to get raw connection from pool: %w", err)
 	}
-	defer sqlConn.Close()
+	defer func() {
+		if err := sqlConn.Close(); err != nil {
+			log.Printf("Failed to close sql connection: %v", err)
+		}
+	}()
 
 	var pgxConn *pgx.Conn
 	if err := sqlConn.Raw(func(driverConn interface{}) error {
@@ -157,7 +161,11 @@ func (c *MessageNodeCache) saveNodes(ctx context.Context, nodes []*messaging.Pro
 	if err != nil {
 		return fmt.Errorf("failed to begin pgx transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
+			log.Printf("Failed to rollback transaction: %v", err)
+		}
+	}()
 
 	// Create a temporary table to hold the batch data
 	_, err = tx.Exec(ctx, `
