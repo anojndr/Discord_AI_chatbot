@@ -3,13 +3,14 @@ package storage
 import (
 	"context"
 	"database/sql"
-	json "github.com/json-iterator/go"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
+	json "github.com/json-iterator/go"
 
 	"DiscordAIChatbot/internal/messaging"
 )
@@ -133,18 +134,33 @@ func (c *MessageNodeCache) saveNodes(ctx context.Context, nodes []*messaging.Pro
 		return nil
 	}
 
-	tx, err := c.db.BeginTx(ctx, nil)
+	// We need to get a raw pgx connection to use the COPY protocol
+	sqlConn, err := c.db.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return fmt.Errorf("failed to get raw connection from pool: %w", err)
 	}
-	defer func() {
-		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-			log.Printf("Failed to rollback transaction: %v", err)
+	defer sqlConn.Close()
+
+	var pgxConn *pgx.Conn
+	if err := sqlConn.Raw(func(driverConn interface{}) error {
+		stdlibConn, ok := driverConn.(*stdlib.Conn)
+		if !ok {
+			return fmt.Errorf("unexpected driver connection type: %T", driverConn)
 		}
-	}()
+		pgxConn = stdlibConn.Conn()
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to extract pgx.Conn: %w", err)
+	}
+
+	tx, err := pgxConn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin pgx transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
 	// Create a temporary table to hold the batch data
-	_, err = tx.ExecContext(ctx, `
+	_, err = tx.Exec(ctx, `
 		CREATE TEMP TABLE temp_message_nodes (
 			message_id TEXT PRIMARY KEY,
 			data JSONB NOT NULL,
@@ -155,12 +171,8 @@ func (c *MessageNodeCache) saveNodes(ctx context.Context, nodes []*messaging.Pro
 		return fmt.Errorf("failed to create temp table: %w", err)
 	}
 
-	// Use pgx-specific COPY FROM
-	stmt, err := tx.PrepareContext(ctx, `COPY temp_message_nodes (message_id, data, updated_at) FROM STDIN`)
-	if err != nil {
-		return fmt.Errorf("failed to prepare copy statement: %w", err)
-	}
-
+	// Prepare rows for CopyFrom
+	rows := make([][]interface{}, 0, len(nodes))
 	for _, pNode := range nodes {
 		serial := msgNodeSerializable{
 			Text:               pNode.Node.GetText(),
@@ -178,19 +190,26 @@ func (c *MessageNodeCache) saveNodes(ctx context.Context, nodes []*messaging.Pro
 			log.Printf("Failed to marshal node %s: %v", pNode.MessageID, err)
 			continue // Skip this node
 		}
-		_, err = stmt.ExecContext(ctx, pNode.MessageID, data, time.Now().Unix())
-		if err != nil {
-			return fmt.Errorf("failed to execute copy: %w", err)
-		}
+		rows = append(rows, []interface{}{pNode.MessageID, data, time.Now().Unix()})
 	}
 
-	err = stmt.Close()
+	if len(rows) == 0 {
+		return nil // All nodes failed to marshal
+	}
+
+	// Use pgx-specific COPY FROM
+	_, err = tx.CopyFrom(
+		ctx,
+		pgx.Identifier{"temp_message_nodes"},
+		[]string{"message_id", "data", "updated_at"},
+		pgx.CopyFromRows(rows),
+	)
 	if err != nil {
-		return fmt.Errorf("failed to close copy statement: %w", err)
+		return fmt.Errorf("failed to execute copy: %w", err)
 	}
 
 	// Upsert from the temporary table to the main table
-	_, err = tx.ExecContext(ctx, `
+	_, err = tx.Exec(ctx, `
 		INSERT INTO message_nodes (message_id, data, updated_at)
 		SELECT message_id, data, updated_at FROM temp_message_nodes
 		ON CONFLICT (message_id) DO UPDATE SET
@@ -201,7 +220,7 @@ func (c *MessageNodeCache) saveNodes(ctx context.Context, nodes []*messaging.Pro
 		return fmt.Errorf("failed to upsert from temp table: %w", err)
 	}
 
-	return tx.Commit()
+	return tx.Commit(ctx)
 }
 
 // GetNode retrieves a cached node. Returns (nil, nil) if not found.
