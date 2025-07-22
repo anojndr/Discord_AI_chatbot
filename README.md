@@ -152,9 +152,6 @@ Every bot response includes helpful action buttons for better interaction:
 **🔗 View Output Better:**
 - Creates a shareable link to text.is with improved formatting for long responses and code.
 
-**🔄 Retry with/without Web Search:**
-- Quickly re-run a query with the opposite web search setting to refine results.
-
 ---
 
 ### Smart Table Rendering:

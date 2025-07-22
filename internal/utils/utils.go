@@ -164,8 +164,6 @@ func CreateEmbed(content string, warnings []string, isComplete bool, footerInfo 
 		// Add web search information
 		if footerInfo.WebSearchPerformed && footerInfo.SearchResultCount > 0 {
 			footerParts = append(footerParts, fmt.Sprintf("🌐 Web search: %d results", footerInfo.SearchResultCount))
-		} else {
-			footerParts = append(footerParts, "WEB SEARCH WAS NOT PERFORMED 💔🥀")
 		}
 
 		if len(footerParts) > 0 {
@@ -179,7 +177,7 @@ func CreateEmbed(content string, warnings []string, isComplete bool, footerInfo 
 }
 
 // CreateActionButtons returns buttons for download, view output better, and retry options.
-func CreateActionButtons(messageID string, webSearchPerformed bool) []discordgo.MessageComponent {
+func CreateActionButtons(messageID string) []discordgo.MessageComponent {
 	// Include download and view output better buttons
 	buttons := []discordgo.MessageComponent{
 		discordgo.Button{
@@ -194,35 +192,10 @@ func CreateActionButtons(messageID string, webSearchPerformed bool) []discordgo.
 		},
 	}
 
-	// Add retry button based on whether web search was performed
-	var retryButtons []discordgo.MessageComponent
-	if webSearchPerformed {
-		// If web search was used, offer retry without web search
-		retryButtons = []discordgo.MessageComponent{
-			discordgo.Button{
-				Label:    "🔄 Retry without Web Search",
-				Style:    discordgo.PrimaryButton,
-				CustomID: "retry_without_search_" + messageID,
-			},
-		}
-	} else {
-		// If web search was not used, offer retry with web search
-		retryButtons = []discordgo.MessageComponent{
-			discordgo.Button{
-				Label:    "🔄 Retry with Web Search",
-				Style:    discordgo.PrimaryButton,
-				CustomID: "retry_with_search_" + messageID,
-			},
-		}
-	}
-
-	// Return buttons in two rows
+	// Return buttons in one row
 	return []discordgo.MessageComponent{
 		discordgo.ActionsRow{
 			Components: buttons,
-		},
-		discordgo.ActionsRow{
-			Components: retryButtons,
 		},
 	}
 }
