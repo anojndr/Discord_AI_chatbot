@@ -71,13 +71,14 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 	// Set up bot
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	httpClient := net.NewOptimizedClient(config.DefaultHTTPTimeout * time.Second)
+	webSearchHTTPClient := net.NewOptimizedClientWithNoTimeout()
 	bot := &Bot{
 		session:          session,
 		config:           cfg,
 		nodeManager:      messaging.NewMsgNodeManager(config.MaxMessageNodes),
 		permChecker:      auth.NewPermissionChecker(cfg),
 		llmClient:        llm.NewLLMClient(cfg, apiKeyManager, httpClient),
-		webSearchClient:  processors.NewWebSearchClient(cfg, httpClient),
+		webSearchClient:  processors.NewWebSearchClient(cfg, webSearchHTTPClient),
 		googleLensClient: processors.NewGoogleLensClient(cfg, apiKeyManager, httpClient),
 		userPrefs:        storage.NewUserPreferencesManager(cfg.DatabaseURL),
 		apiKeyManager:    apiKeyManager,

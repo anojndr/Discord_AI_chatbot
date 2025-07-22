@@ -20,3 +20,9 @@ func NewOptimizedClient(timeout time.Duration) *http.Client {
         Transport: defaultTransport,
     }
 }
+
+func NewOptimizedClientWithNoTimeout() *http.Client {
+	return &http.Client{
+		Transport: defaultTransport,
+	}
+}
