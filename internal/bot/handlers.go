@@ -220,8 +220,14 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 		return
 	}
 
-	// Handle the message
-	go b.handleMessage(s, m)
+	// Instead of `go b.handleMessage(s, m)`, submit to the job channel
+	select {
+	case b.messageJobs <- m:
+	// Job successfully submitted
+	default:
+		// Pool is busy, log and drop the message to prevent blocking the Discord handler.
+		log.Printf("Message processing pool is full. Dropping message from user %s", m.Author.ID)
+	}
 }
 
 // getProperMessageReference returns the appropriate MessageReference for a message

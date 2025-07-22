@@ -50,6 +50,7 @@ type Bot struct {
 	shutdownCancel   context.CancelFunc
 	activeGoroutines sync.WaitGroup
 	messageCache     *storage.MessageNodeCache
+	messageJobs      chan *discordgo.MessageCreate // Add this
 }
 
 // NewBot creates a new Discord bot instance
@@ -90,6 +91,7 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 		shutdownCtx:      shutdownCtx,
 		shutdownCancel:   shutdownCancel,
 		httpClient:       httpClient,
+		messageJobs:      make(chan *discordgo.MessageCreate, 100), // Buffered channel
 	}
 
 	// Configure Discord session
@@ -108,6 +110,25 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 
 // Start starts the Discord bot
 func (b *Bot) Start() error {
+	// Start worker pool
+	workerCount := 8 // Match your CPU threads
+	for i := 0; i < workerCount; i++ {
+		b.activeGoroutines.Add(1)
+		go func(workerID int) {
+			defer b.activeGoroutines.Done()
+			log.Printf("Starting message worker %d", workerID)
+			for {
+				select {
+				case job := <-b.messageJobs:
+					b.handleMessage(b.session, job)
+				case <-b.shutdownCtx.Done():
+					log.Printf("Stopping message worker %d", workerID)
+					return
+				}
+			}
+		}(i)
+	}
+
 	// Start health check server
 	go func() {
 		if err := b.healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
