@@ -278,47 +278,47 @@ func (g *GoogleLensClient) searchWithKey(ctx context.Context, imageURL string, o
 		builderPool.Put(builder)
 	}()
 	builder.WriteString("Google Lens Results\n")
-	builder.WriteString(fmt.Sprintf("Status: %s | Search ID: %s\n\n", glResp.SearchMetadata.Status, glResp.SearchMetadata.ID))
+	_, _ = fmt.Fprintf(builder, "Status: %s | Search ID: %s\n\n", glResp.SearchMetadata.Status, glResp.SearchMetadata.ID)
 
 	maxMatches := 5
 	for i, match := range glResp.VisualMatches {
 		if i >= maxMatches {
 			break
 		}
-		builder.WriteString(fmt.Sprintf("Match %d: %s\n", i+1, match.Title))
-		builder.WriteString(fmt.Sprintf("Source: %s\n", match.Source))
-		builder.WriteString(fmt.Sprintf("Link: %s\n", match.Link))
+		_, _ = fmt.Fprintf(builder, "Match %d: %s\n", i+1, match.Title)
+		_, _ = fmt.Fprintf(builder, "Source: %s\n", match.Source)
+		_, _ = fmt.Fprintf(builder, "Link: %s\n", match.Link)
 
 		// Add price information if available
 		if match.Price != nil {
-			builder.WriteString(fmt.Sprintf("Price: %s\n", match.Price.Value))
+			_, _ = fmt.Fprintf(builder, "Price: %s\n", match.Price.Value)
 		}
 
 		// Add rating and reviews if available
 		if match.Rating > 0 {
-			builder.WriteString(fmt.Sprintf("Rating: %.1f", match.Rating))
+			_, _ = fmt.Fprintf(builder, "Rating: %.1f", match.Rating)
 			if match.Reviews > 0 {
-				builder.WriteString(fmt.Sprintf(" (%d reviews)", match.Reviews))
+				_, _ = fmt.Fprintf(builder, " (%d reviews)", match.Reviews)
 			}
 			builder.WriteString("\n")
 		}
 
 		// Add availability and condition if available
 		if match.Condition != "" {
-			builder.WriteString(fmt.Sprintf("Condition: %s\n", match.Condition))
+			_, _ = fmt.Fprintf(builder, "Condition: %s\n", match.Condition)
 		}
 
 		builder.WriteString("\n")
 	}
 
 	if len(glResp.RelatedContent) > 0 {
-		builder.WriteString("Related Content:\n")
+		_, _ = fmt.Fprint(builder, "Related Content:\n")
 		maxRelated := 5
 		for i, rc := range glResp.RelatedContent {
 			if i >= maxRelated {
 				break
 			}
-			builder.WriteString(fmt.Sprintf("- %s (%s)\n", rc.Query, rc.Link))
+			_, _ = fmt.Fprintf(builder, "- %s (%s)\n", rc.Query, rc.Link)
 		}
 	}
 

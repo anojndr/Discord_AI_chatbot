@@ -22,19 +22,19 @@ func (f *WebSearchResultFormatter) FormatSearchResults(resp *FinalResponsePayloa
 		builderPool.Put(builder)
 	}()
 
-	builder.WriteString(fmt.Sprintf("Found %d results for query: %s\n\n",
-		resp.QueryDetails.ActualResultsFound, resp.QueryDetails.Query))
+	_, _ = fmt.Fprintf(builder, "Found %d results for query: %s\n\n",
+		resp.QueryDetails.ActualResultsFound, resp.QueryDetails.Query)
 
 	for i, result := range resp.Results {
-		builder.WriteString(fmt.Sprintf("--- Result %d ---\n", i+1))
-		builder.WriteString(fmt.Sprintf("URL: %s\n", result.URL))
-		builder.WriteString(fmt.Sprintf("Source Type: %s\n", result.SourceType))
+		_, _ = fmt.Fprintf(builder, "--- Result %d ---\n", i+1)
+		_, _ = fmt.Fprintf(builder, "URL: %s\n", result.URL)
+		_, _ = fmt.Fprintf(builder, "Source Type: %s\n", result.SourceType)
 
 		if !result.ProcessedSuccessfully {
 			if result.Error != nil {
-				builder.WriteString(fmt.Sprintf("Error: %s\n", *result.Error))
+				_, _ = fmt.Fprintf(builder, "Error: %s\n", *result.Error)
 			} else {
-				builder.WriteString("Error: Processing failed\n")
+				_, _ = fmt.Fprint(builder, "Error: Processing failed\n")
 			}
 			builder.WriteString("\n")
 			continue
@@ -44,7 +44,7 @@ func (f *WebSearchResultFormatter) FormatSearchResults(resp *FinalResponsePayloa
 		if result.Data != nil {
 			content := f.ExtractContentFromData(result.Data, result.SourceType)
 			if content != "" {
-				builder.WriteString(fmt.Sprintf("Content:\n%s\n", content))
+				_, _ = fmt.Fprintf(builder, "Content:\n%s\n", content)
 			}
 		}
 
@@ -62,18 +62,18 @@ func (f *WebSearchResultFormatter) FormatExtractResults(resp *ExtractResponsePay
 		builderPool.Put(builder)
 	}()
 
-	builder.WriteString(fmt.Sprintf("📄 **Extracted content from %d URL(s):**\n\n", resp.RequestDetails.URLsProcessed))
+	_, _ = fmt.Fprintf(builder, "📄 **Extracted content from %d URL(s):**\n\n", resp.RequestDetails.URLsProcessed)
 
 	for i, result := range resp.Results {
-		builder.WriteString(fmt.Sprintf("--- URL %d ---\n", i+1))
-		builder.WriteString(fmt.Sprintf("URL: %s\n", result.URL))
-		builder.WriteString(fmt.Sprintf("Source Type: %s\n", result.SourceType))
+		_, _ = fmt.Fprintf(builder, "--- URL %d ---\n", i+1)
+		_, _ = fmt.Fprintf(builder, "URL: %s\n", result.URL)
+		_, _ = fmt.Fprintf(builder, "Source Type: %s\n", result.SourceType)
 
 		if !result.ProcessedSuccessfully {
 			if result.Error != nil {
-				builder.WriteString(fmt.Sprintf("Error: %s\n", *result.Error))
+				_, _ = fmt.Fprintf(builder, "Error: %s\n", *result.Error)
 			} else {
-				builder.WriteString("Error: Processing failed\n")
+				_, _ = fmt.Fprint(builder, "Error: Processing failed\n")
 			}
 			builder.WriteString("\n")
 			continue
@@ -83,7 +83,7 @@ func (f *WebSearchResultFormatter) FormatExtractResults(resp *ExtractResponsePay
 		if result.Data != nil {
 			content := f.ExtractContentFromData(result.Data, result.SourceType)
 			if content != "" {
-				builder.WriteString(fmt.Sprintf("Content:\n%s\n", content))
+				_, _ = fmt.Fprintf(builder, "Content:\n%s\n", content)
 			}
 		}
 
@@ -127,23 +127,23 @@ func (f *WebSearchResultFormatter) formatYouTubeData(data map[string]interface{}
 	}()
 
 	if title, ok := data["title"].(string); ok && title != "" {
-		builder.WriteString(fmt.Sprintf("Title: %s\n", title))
+		_, _ = fmt.Fprintf(builder, "Title: %s\n", title)
 	}
 
 	if channel, ok := data["channel_name"].(string); ok && channel != "" {
-		builder.WriteString(fmt.Sprintf("Channel: %s\n", channel))
+		_, _ = fmt.Fprintf(builder, "Channel: %s\n", channel)
 	}
 
 	if transcript, ok := data["transcript"].(string); ok && transcript != "" {
-		builder.WriteString(fmt.Sprintf("Transcript: %s\n", transcript))
+		_, _ = fmt.Fprintf(builder, "Transcript: %s\n", transcript)
 	}
 
 	// Handle structured comments array as per API docs
 	if comments, ok := data["comments"].([]interface{}); ok && len(comments) > 0 {
-		builder.WriteString("Comments:\n")
+		_, _ = fmt.Fprint(builder, "Comments:\n")
 		for _, comment := range comments {
 			if commentMap, ok := comment.(map[string]interface{}); ok {
-				builder.WriteString(f.formatYouTubeComment(commentMap, 1))
+				_, _ = fmt.Fprint(builder, f.formatYouTubeComment(commentMap, 1))
 			}
 		}
 	}
@@ -160,24 +160,24 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 	}()
 
 	if title, ok := data["post_title"].(string); ok && title != "" {
-		builder.WriteString(fmt.Sprintf("Post Title: %s\n", title))
+		_, _ = fmt.Fprintf(builder, "Post Title: %s\n", title)
 	}
 
 	if body, ok := data["post_body"].(string); ok && body != "" {
-		builder.WriteString(fmt.Sprintf("Post Body: %s\n", body))
+		_, _ = fmt.Fprintf(builder, "Post Body: %s\n", body)
 	}
 
 	if author, ok := data["author"].(string); ok && author != "" {
-		builder.WriteString(fmt.Sprintf("Author: %s\n", author))
+		_, _ = fmt.Fprintf(builder, "Author: %s\n", author)
 	}
 
 	if score, ok := data["score"].(float64); ok {
-		builder.WriteString(fmt.Sprintf("Score: %.0f\n", score))
+		_, _ = fmt.Fprintf(builder, "Score: %.0f\n", score)
 	}
 
 	// Handle posts from subreddit/user pages
 	if posts, ok := data["posts"].([]interface{}); ok && len(posts) > 0 {
-		builder.WriteString("Posts:\n")
+		_, _ = fmt.Fprint(builder, "Posts:\n")
 		for i, post := range posts {
 			if postMap, ok := post.(map[string]interface{}); ok {
 				var postParts []string
@@ -191,7 +191,7 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 					postParts = append(postParts, fmt.Sprintf("- %.0f points", postScore))
 				}
 				if len(postParts) > 0 {
-					builder.WriteString(fmt.Sprintf("  - %s\n", strings.Join(postParts, " ")))
+					_, _ = fmt.Fprintf(builder, "  - %s\n", strings.Join(postParts, " "))
 				}
 			}
 		}
@@ -199,12 +199,12 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 
 	// Handle structured comments array as per API docs
 	if comments, ok := data["comments"].([]interface{}); ok && len(comments) > 0 {
-		builder.WriteString("Comments:\n")
+		_, _ = fmt.Fprint(builder, "Comments:\n")
 		for _, comment := range comments {
 			if commentStr, ok := comment.(string); ok && commentStr != "" {
 				// Filter out Reddit pagination objects that show as "... and X more comments"
 				if !strings.Contains(commentStr, "... and") || !strings.Contains(commentStr, "more comments") {
-					builder.WriteString(fmt.Sprintf("  - %s\n", commentStr))
+					_, _ = fmt.Fprintf(builder, "  - %s\n", commentStr)
 				}
 			} else if commentMap, ok := comment.(map[string]interface{}); ok {
 				var commentParts []string
@@ -221,7 +221,7 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 					}
 				}
 				if len(commentParts) > 0 {
-					builder.WriteString(fmt.Sprintf("  - %s\n", strings.Join(commentParts, " ")))
+					_, _ = fmt.Fprintf(builder, "  - %s\n", strings.Join(commentParts, " "))
 				}
 
 				// Handle nested replies if present
@@ -232,9 +232,9 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 						if replyMap, ok := reply.(map[string]interface{}); ok {
 							if replyText, exists := replyMap["text"].(string); exists && replyText != "" {
 								if replyAuthor, exists := replyMap["author"].(string); exists && replyAuthor != "" {
-									builder.WriteString(fmt.Sprintf("    ↳ u/%s: %s\n", replyAuthor, replyText))
+									_, _ = fmt.Fprintf(builder, "    ↳ u/%s: %s\n", replyAuthor, replyText)
 								} else {
-									builder.WriteString(fmt.Sprintf("    ↳ %s\n", replyText))
+									_, _ = fmt.Fprintf(builder, "    ↳ %s\n", replyText)
 								}
 							}
 						}
@@ -264,11 +264,11 @@ func (f *WebSearchResultFormatter) formatWebpageData(data map[string]interface{}
 	}()
 
 	if title, ok := data["title"].(string); ok && title != "" {
-		builder.WriteString(fmt.Sprintf("Title: %s\n", title))
+		_, _ = fmt.Fprintf(builder, "Title: %s\n", title)
 	}
 
 	if textContent, ok := data["text_content"].(string); ok && textContent != "" {
-		builder.WriteString(textContent)
+		_, _ = fmt.Fprint(builder, textContent)
 	}
 
 	return builder.String()
@@ -283,20 +283,20 @@ func (f *WebSearchResultFormatter) formatSingleTweetData(data map[string]interfa
 	}()
 
 	if tweetContent, ok := data["tweet_content"].(string); ok && tweetContent != "" {
-		builder.WriteString(fmt.Sprintf("Tweet: %s\n", tweetContent))
+		_, _ = fmt.Fprintf(builder, "Tweet: %s\n", tweetContent)
 	}
 
 	if tweetAuthor, ok := data["tweet_author"].(string); ok && tweetAuthor != "" {
-		builder.WriteString(fmt.Sprintf("Author: %s\n", tweetAuthor))
+		_, _ = fmt.Fprintf(builder, "Author: %s\n", tweetAuthor)
 	}
 
 	if totalComments, ok := data["total_comments"].(float64); ok {
-		builder.WriteString(fmt.Sprintf("Total Comments: %.0f\n", totalComments))
+		_, _ = fmt.Fprintf(builder, "Total Comments: %.0f\n", totalComments)
 	}
 
 	// Handle structured comments array as per API docs
 	if comments, ok := data["comments"].([]interface{}); ok && len(comments) > 0 {
-		builder.WriteString("Comments:\n")
+		_, _ = fmt.Fprint(builder, "Comments:\n")
 		for _, comment := range comments {
 			if commentMap, ok := comment.(map[string]interface{}); ok {
 				var commentParts []string
@@ -322,7 +322,7 @@ func (f *WebSearchResultFormatter) formatSingleTweetData(data map[string]interfa
 					commentParts = append(commentParts, fmt.Sprintf("🔄 %s", retweets))
 				}
 				if len(commentParts) > 0 {
-					builder.WriteString(fmt.Sprintf("  - %s\n", strings.Join(commentParts, " ")))
+					_, _ = fmt.Fprintf(builder, "  - %s\n", strings.Join(commentParts, " "))
 				}
 			}
 		}
@@ -345,19 +345,19 @@ func (f *WebSearchResultFormatter) formatTwitterProfileData(data map[string]inte
 	}()
 
 	if profileURL, ok := data["profile_url"].(string); ok && profileURL != "" {
-		builder.WriteString(fmt.Sprintf("Profile: %s\n", profileURL))
+		_, _ = fmt.Fprintf(builder, "Profile: %s\n", profileURL)
 	}
 
 	if tweets, ok := data["latest_tweets"].([]interface{}); ok && len(tweets) > 0 {
-		builder.WriteString("\nLatest Tweets:\n")
+		_, _ = fmt.Fprint(builder, "\nLatest Tweets:\n")
 		for i, tweet := range tweets {
 			if tweetMap, ok := tweet.(map[string]interface{}); ok {
-				builder.WriteString(fmt.Sprintf("\n--- Tweet %d ---\n", i+1))
+				_, _ = fmt.Fprintf(builder, "\n--- Tweet %d ---\n", i+1)
 				if tweetURL, ok := tweetMap["url"].(string); ok && tweetURL != "" {
-					builder.WriteString(fmt.Sprintf("URL: %s\n", tweetURL))
+					_, _ = fmt.Fprintf(builder, "URL: %s\n", tweetURL)
 				}
 				if tweetData, ok := tweetMap["data"].(map[string]interface{}); ok {
-					builder.WriteString(f.formatSingleTweetData(tweetData))
+					_, _ = fmt.Fprint(builder, f.formatSingleTweetData(tweetData))
 				}
 			}
 		}
@@ -376,7 +376,7 @@ func (f *WebSearchResultFormatter) formatGenericData(data map[string]interface{}
 
 	for key, value := range data {
 		if str, ok := value.(string); ok && str != "" {
-			builder.WriteString(fmt.Sprintf("%s: %s\n", key, str))
+			_, _ = fmt.Fprintf(builder, "%s: %s\n", key, str)
 		}
 	}
 	return builder.String()
@@ -402,12 +402,12 @@ func (f *WebSearchResultFormatter) formatYouTubeComment(comment map[string]inter
 		commentParts = append(commentParts, fmt.Sprintf("(%d likes)", int(likes)))
 	}
 
-	builder.WriteString(fmt.Sprintf("%s- %s\n", indent, strings.Join(commentParts, " ")))
+	_, _ = fmt.Fprintf(builder, "%s- %s\n", indent, strings.Join(commentParts, " "))
 
 	if replies, ok := comment["replies"].([]interface{}); ok && len(replies) > 0 {
 		for _, reply := range replies {
 			if replyMap, ok := reply.(map[string]interface{}); ok {
-				builder.WriteString(f.formatYouTubeComment(replyMap, depth+1))
+				_, _ = fmt.Fprint(builder, f.formatYouTubeComment(replyMap, depth+1))
 			}
 		}
 	}

@@ -453,7 +453,11 @@ func (w *WebSearchClient) ExtractURLs(ctx context.Context, urls []string) (strin
 		if err != nil {
 			return nil, fmt.Errorf("failed to make request: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Failed to close response body: %v", err)
+			}
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("URL extract API returned status %d", resp.StatusCode)

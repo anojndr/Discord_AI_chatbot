@@ -25,7 +25,6 @@ const (
 // ParentMsg and mutex fields are deliberately omitted.
 type MessageNodeCache struct {
 	db        *sql.DB
-	mu        sync.RWMutex
 	nodeQueue chan *messaging.ProcessedNode
 	wg        sync.WaitGroup
 }
@@ -138,7 +137,11 @@ func (c *MessageNodeCache) saveNodes(ctx context.Context, nodes []*messaging.Pro
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			log.Printf("Failed to rollback transaction: %v", err)
+		}
+	}()
 
 	// Create a temporary table to hold the batch data
 	_, err = tx.ExecContext(ctx, `

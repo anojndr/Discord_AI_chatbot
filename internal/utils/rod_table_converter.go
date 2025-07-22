@@ -241,7 +241,7 @@ func (rtc *RodTableConverter) generateTableHTML(tableData *TableData) string {
 	if len(tableData.Headers) > 0 {
 		htmlBuilder.WriteString("\n        <thead>\n            <tr>")
 		for _, header := range tableData.Headers {
-			htmlBuilder.WriteString(fmt.Sprintf("\n                <th>%s</th>", rtc.escapeHTML(header)))
+			_, _ = fmt.Fprintf(htmlBuilder, "\n                <th>%s</th>", rtc.escapeHTML(header))
 		}
 		htmlBuilder.WriteString("\n            </tr>\n        </thead>")
 	}
@@ -254,7 +254,7 @@ func (rtc *RodTableConverter) generateTableHTML(tableData *TableData) string {
 			for i, cell := range row {
 				// Ensure we don't exceed the number of headers
 				if i < len(tableData.Headers) {
-					htmlBuilder.WriteString(fmt.Sprintf("\n                <td>%s</td>", rtc.escapeHTML(cell)))
+					_, _ = fmt.Fprintf(htmlBuilder, "\n                <td>%s</td>", rtc.escapeHTML(cell))
 				}
 			}
 			htmlBuilder.WriteString("\n            </tr>")

@@ -237,7 +237,12 @@ func (y *YouTubeURLExtractor) GetVideoURLsFromPlaylist(playlistID, apiKey string
 		if err != nil {
 			return nil, fmt.Errorf("failed to make request to YouTube API: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				// Log the error, but we can't do much else
+				_ = err
+			}
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("YouTube API returned non-200 status code: %d", resp.StatusCode)

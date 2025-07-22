@@ -62,7 +62,12 @@ func UploadToCatbox(filename string, fileData []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// We can't do much here, but we should log it.
+			_ = err
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("bad status code: %s", resp.Status)
