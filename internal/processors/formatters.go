@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+
 // WebSearchResultFormatter handles formatting of web search results
 type WebSearchResultFormatter struct{}
 
@@ -15,7 +16,11 @@ func NewWebSearchResultFormatter() *WebSearchResultFormatter {
 
 // FormatSearchResults formats the search results into a readable string
 func (f *WebSearchResultFormatter) FormatSearchResults(resp *FinalResponsePayload) string {
-	var builder strings.Builder
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 
 	builder.WriteString(fmt.Sprintf("Found %d results for query: %s\n\n",
 		resp.QueryDetails.ActualResultsFound, resp.QueryDetails.Query))
@@ -51,7 +56,11 @@ func (f *WebSearchResultFormatter) FormatSearchResults(resp *FinalResponsePayloa
 
 // FormatExtractResults formats the extract results into a readable string
 func (f *WebSearchResultFormatter) FormatExtractResults(resp *ExtractResponsePayload) string {
-	var builder strings.Builder
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 
 	builder.WriteString(fmt.Sprintf("📄 **Extracted content from %d URL(s):**\n\n", resp.RequestDetails.URLsProcessed))
 
@@ -111,56 +120,64 @@ func (f *WebSearchResultFormatter) ExtractContentFromData(data interface{}, sour
 
 // formatYouTubeData formats YouTube video data according to API documentation
 func (f *WebSearchResultFormatter) formatYouTubeData(data map[string]interface{}) string {
-	var parts []string
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 
 	if title, ok := data["title"].(string); ok && title != "" {
-		parts = append(parts, fmt.Sprintf("Title: %s", title))
+		builder.WriteString(fmt.Sprintf("Title: %s\n", title))
 	}
 
 	if channel, ok := data["channel_name"].(string); ok && channel != "" {
-		parts = append(parts, fmt.Sprintf("Channel: %s", channel))
+		builder.WriteString(fmt.Sprintf("Channel: %s\n", channel))
 	}
 
 	if transcript, ok := data["transcript"].(string); ok && transcript != "" {
-		parts = append(parts, fmt.Sprintf("Transcript: %s", transcript))
+		builder.WriteString(fmt.Sprintf("Transcript: %s\n", transcript))
 	}
 
 	// Handle structured comments array as per API docs
 	if comments, ok := data["comments"].([]interface{}); ok && len(comments) > 0 {
-		parts = append(parts, "Comments:")
+		builder.WriteString("Comments:\n")
 		for _, comment := range comments {
 			if commentMap, ok := comment.(map[string]interface{}); ok {
-				parts = append(parts, f.formatYouTubeComment(commentMap, 1))
+				builder.WriteString(f.formatYouTubeComment(commentMap, 1))
 			}
 		}
 	}
 
-	return strings.Join(parts, "\n")
+	return builder.String()
 }
 
 // formatRedditData formats Reddit post data according to API documentation
 func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{}) string {
-	var parts []string
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 
 	if title, ok := data["post_title"].(string); ok && title != "" {
-		parts = append(parts, fmt.Sprintf("Post Title: %s", title))
+		builder.WriteString(fmt.Sprintf("Post Title: %s\n", title))
 	}
 
 	if body, ok := data["post_body"].(string); ok && body != "" {
-		parts = append(parts, fmt.Sprintf("Post Body: %s", body))
+		builder.WriteString(fmt.Sprintf("Post Body: %s\n", body))
 	}
 
 	if author, ok := data["author"].(string); ok && author != "" {
-		parts = append(parts, fmt.Sprintf("Author: %s", author))
+		builder.WriteString(fmt.Sprintf("Author: %s\n", author))
 	}
 
 	if score, ok := data["score"].(float64); ok {
-		parts = append(parts, fmt.Sprintf("Score: %.0f", score))
+		builder.WriteString(fmt.Sprintf("Score: %.0f\n", score))
 	}
 
 	// Handle posts from subreddit/user pages
 	if posts, ok := data["posts"].([]interface{}); ok && len(posts) > 0 {
-		parts = append(parts, "Posts:")
+		builder.WriteString("Posts:\n")
 		for i, post := range posts {
 			if postMap, ok := post.(map[string]interface{}); ok {
 				var postParts []string
@@ -174,7 +191,7 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 					postParts = append(postParts, fmt.Sprintf("- %.0f points", postScore))
 				}
 				if len(postParts) > 0 {
-					parts = append(parts, fmt.Sprintf("  - %s", strings.Join(postParts, " ")))
+					builder.WriteString(fmt.Sprintf("  - %s\n", strings.Join(postParts, " ")))
 				}
 			}
 		}
@@ -182,12 +199,12 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 
 	// Handle structured comments array as per API docs
 	if comments, ok := data["comments"].([]interface{}); ok && len(comments) > 0 {
-		parts = append(parts, "Comments:")
+		builder.WriteString("Comments:\n")
 		for _, comment := range comments {
 			if commentStr, ok := comment.(string); ok && commentStr != "" {
 				// Filter out Reddit pagination objects that show as "... and X more comments"
 				if !strings.Contains(commentStr, "... and") || !strings.Contains(commentStr, "more comments") {
-					parts = append(parts, fmt.Sprintf("  - %s", commentStr))
+					builder.WriteString(fmt.Sprintf("  - %s\n", commentStr))
 				}
 			} else if commentMap, ok := comment.(map[string]interface{}); ok {
 				var commentParts []string
@@ -204,7 +221,7 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 					}
 				}
 				if len(commentParts) > 0 {
-					parts = append(parts, fmt.Sprintf("  - %s", strings.Join(commentParts, " ")))
+					builder.WriteString(fmt.Sprintf("  - %s\n", strings.Join(commentParts, " ")))
 				}
 
 				// Handle nested replies if present
@@ -215,9 +232,9 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 						if replyMap, ok := reply.(map[string]interface{}); ok {
 							if replyText, exists := replyMap["text"].(string); exists && replyText != "" {
 								if replyAuthor, exists := replyMap["author"].(string); exists && replyAuthor != "" {
-									parts = append(parts, fmt.Sprintf("    ↳ u/%s: %s", replyAuthor, replyText))
+									builder.WriteString(fmt.Sprintf("    ↳ u/%s: %s\n", replyAuthor, replyText))
 								} else {
-									parts = append(parts, fmt.Sprintf("    ↳ %s", replyText))
+									builder.WriteString(fmt.Sprintf("    ↳ %s\n", replyText))
 								}
 							}
 						}
@@ -227,7 +244,7 @@ func (f *WebSearchResultFormatter) formatRedditData(data map[string]interface{})
 		}
 	}
 
-	return strings.Join(parts, "\n")
+	return builder.String()
 }
 
 // formatPDFData formats PDF document data
@@ -240,38 +257,46 @@ func (f *WebSearchResultFormatter) formatPDFData(data map[string]interface{}) st
 
 // formatWebpageData formats webpage data
 func (f *WebSearchResultFormatter) formatWebpageData(data map[string]interface{}) string {
-	var parts []string
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 
 	if title, ok := data["title"].(string); ok && title != "" {
-		parts = append(parts, fmt.Sprintf("Title: %s", title))
+		builder.WriteString(fmt.Sprintf("Title: %s\n", title))
 	}
 
 	if textContent, ok := data["text_content"].(string); ok && textContent != "" {
-		parts = append(parts, textContent)
+		builder.WriteString(textContent)
 	}
 
-	return strings.Join(parts, "\n")
+	return builder.String()
 }
 
 // formatSingleTweetData formats a single Twitter/X post, making it reusable
 func (f *WebSearchResultFormatter) formatSingleTweetData(data map[string]interface{}) string {
-	var parts []string
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 
 	if tweetContent, ok := data["tweet_content"].(string); ok && tweetContent != "" {
-		parts = append(parts, fmt.Sprintf("Tweet: %s", tweetContent))
+		builder.WriteString(fmt.Sprintf("Tweet: %s\n", tweetContent))
 	}
 
 	if tweetAuthor, ok := data["tweet_author"].(string); ok && tweetAuthor != "" {
-		parts = append(parts, fmt.Sprintf("Author: %s", tweetAuthor))
+		builder.WriteString(fmt.Sprintf("Author: %s\n", tweetAuthor))
 	}
 
 	if totalComments, ok := data["total_comments"].(float64); ok {
-		parts = append(parts, fmt.Sprintf("Total Comments: %.0f", totalComments))
+		builder.WriteString(fmt.Sprintf("Total Comments: %.0f\n", totalComments))
 	}
 
 	// Handle structured comments array as per API docs
 	if comments, ok := data["comments"].([]interface{}); ok && len(comments) > 0 {
-		parts = append(parts, "Comments:")
+		builder.WriteString("Comments:\n")
 		for _, comment := range comments {
 			if commentMap, ok := comment.(map[string]interface{}); ok {
 				var commentParts []string
@@ -297,13 +322,13 @@ func (f *WebSearchResultFormatter) formatSingleTweetData(data map[string]interfa
 					commentParts = append(commentParts, fmt.Sprintf("🔄 %s", retweets))
 				}
 				if len(commentParts) > 0 {
-					parts = append(parts, fmt.Sprintf("  - %s", strings.Join(commentParts, " ")))
+					builder.WriteString(fmt.Sprintf("  - %s\n", strings.Join(commentParts, " ")))
 				}
 			}
 		}
 	}
 
-	return strings.Join(parts, "\n")
+	return builder.String()
 }
 
 // formatTwitterData formats Twitter/X data according to API documentation
@@ -313,44 +338,57 @@ func (f *WebSearchResultFormatter) formatTwitterData(data map[string]interface{}
 
 // formatTwitterProfileData formats Twitter/X profile data
 func (f *WebSearchResultFormatter) formatTwitterProfileData(data map[string]interface{}) string {
-	var parts []string
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 
 	if profileURL, ok := data["profile_url"].(string); ok && profileURL != "" {
-		parts = append(parts, fmt.Sprintf("Profile: %s", profileURL))
+		builder.WriteString(fmt.Sprintf("Profile: %s\n", profileURL))
 	}
 
 	if tweets, ok := data["latest_tweets"].([]interface{}); ok && len(tweets) > 0 {
-		parts = append(parts, "\nLatest Tweets:")
+		builder.WriteString("\nLatest Tweets:\n")
 		for i, tweet := range tweets {
 			if tweetMap, ok := tweet.(map[string]interface{}); ok {
-				parts = append(parts, fmt.Sprintf("\n--- Tweet %d ---", i+1))
+				builder.WriteString(fmt.Sprintf("\n--- Tweet %d ---\n", i+1))
 				if tweetURL, ok := tweetMap["url"].(string); ok && tweetURL != "" {
-					parts = append(parts, fmt.Sprintf("URL: %s", tweetURL))
+					builder.WriteString(fmt.Sprintf("URL: %s\n", tweetURL))
 				}
 				if tweetData, ok := tweetMap["data"].(map[string]interface{}); ok {
-					parts = append(parts, f.formatSingleTweetData(tweetData))
+					builder.WriteString(f.formatSingleTweetData(tweetData))
 				}
 			}
 		}
 	}
 
-	return strings.Join(parts, "\n")
+	return builder.String()
 }
 
 // formatGenericData formats generic data
 func (f *WebSearchResultFormatter) formatGenericData(data map[string]interface{}) string {
-	var parts []string
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
+
 	for key, value := range data {
 		if str, ok := value.(string); ok && str != "" {
-			parts = append(parts, fmt.Sprintf("%s: %s", key, str))
+			builder.WriteString(fmt.Sprintf("%s: %s\n", key, str))
 		}
 	}
-	return strings.Join(parts, "\n")
+	return builder.String()
 }
 
 // formatYouTubeComment formats a single YouTube comment and its replies recursively
 func (f *WebSearchResultFormatter) formatYouTubeComment(comment map[string]interface{}, depth int) string {
-	var builder strings.Builder
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 	indent := strings.Repeat("    ", depth-1)
 
 	var commentParts []string
