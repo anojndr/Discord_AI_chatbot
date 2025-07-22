@@ -2,7 +2,7 @@ package processors
 
 import (
 	"context"
-	"encoding/json"
+	json "github.com/json-iterator/go"
 	"fmt"
 	"io"
 	"log"

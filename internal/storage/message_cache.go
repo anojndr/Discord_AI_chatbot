@@ -3,7 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	json "github.com/json-iterator/go"
 	"fmt"
 	"log"
 	"sync"
