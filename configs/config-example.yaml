@@ -197,7 +197,7 @@ web_search:
     5.  **Generate Appropriate Search Queries**
         Create specific, focused search queries in English. Always translate foreign language terms to English.
         - **For comparisons** (e.g., "A vs B", "which is better A or B"): Generate multiple queries, one for each entity being compared.
-        - **IMPORTANT**: For time-sensitive queries (news, releases, current events), append the current year (`%d`) to search queries to ensure fresh results.
+        - **IMPORTANT**: For time-sensitive queries (news, releases, current events), append the current year (`{current_year}`) to search queries to ensure fresh results.
 
     6.  **Handle Images**
         If an image is attached, identify specific objects, people, places, or text and use those exact identifications in your search queries.
@@ -295,7 +295,7 @@ web_search:
     ```json
     {
       "web_search_required": true,
-      "search_queries": ["Formula 1 race results last weekend %d"]
+      "search_queries": ["Formula 1 race results last weekend {current_year}"]
     }
     ```
     </details>
@@ -342,7 +342,7 @@ web_search:
     ```json
     {
       "web_search_required": true,
-      "search_queries": ["EU flight carry-on liquid restrictions %d"]
+      "search_queries": ["EU flight carry-on liquid restrictions {current_year}"]
     }
     ```
     </details>
@@ -357,7 +357,7 @@ web_search:
     ```json
     {
       "web_search_required": true,
-      "search_queries": ["latest FDA approved treatments for migraines %d"]
+      "search_queries": ["latest FDA approved treatments for migraines {current_year}"]
     }
     ```
     </details>

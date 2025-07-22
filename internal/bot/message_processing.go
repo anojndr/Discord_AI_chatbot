@@ -191,7 +191,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			}
 
 			if decision.WebSearchRequired && len(decision.SearchQueries) > 0 {
-				log.Printf("Web search required. Queries: %s", strings.Join(decision.SearchQueries, ", "))
+				log.Println("Web search required. Queries:", strings.Join(decision.SearchQueries, ", "))
 				searchCtx, searchCancel := context.WithTimeout(gctx, 60*time.Second)
 				defer searchCancel()
 
