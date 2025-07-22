@@ -45,8 +45,10 @@ func GetDatabase(dbURL string) (*sql.DB, error) {
 		}
 
 		// Configure connection pool for better performance
-		db.SetMaxOpenConns(25)
-		db.SetMaxIdleConns(5)
+		// Tune connection pool for better concurrency
+		// Set MaxOpenConns to be a multiple of your core/thread count
+		db.SetMaxOpenConns(16) // e.g., 2 * 8 threads
+		db.SetMaxIdleConns(8)  // e.g., 1 * 8 threads
 		db.SetConnMaxLifetime(5 * time.Minute)
 		db.SetConnMaxIdleTime(2 * time.Minute)
 
