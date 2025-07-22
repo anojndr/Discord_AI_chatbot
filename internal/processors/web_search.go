@@ -8,9 +8,12 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"DiscordAIChatbot/internal/auth"
 	"DiscordAIChatbot/internal/config"
@@ -22,9 +25,10 @@ import (
 
 // WebSearchClient handles web search API requests
 type WebSearchClient struct {
-	config    *config.Config
+	config     *config.Config
 	httpClient *http.Client
-	formatter *WebSearchResultFormatter
+	formatter  *WebSearchResultFormatter
+	fetchGroup singleflight.Group
 }
 
 // SearchRequest represents the request to the web search API's /search endpoint
@@ -114,9 +118,9 @@ type TwitterComment struct {
 // for reliable web search API communication.
 func NewWebSearchClient(cfg *config.Config, httpClient *http.Client) *WebSearchClient {
 	return &WebSearchClient{
-		config:    cfg,
+		config:     cfg,
 		httpClient: httpClient,
-		formatter: NewWebSearchResultFormatter(),
+		formatter:  NewWebSearchResultFormatter(),
 	}
 }
 
@@ -388,88 +392,82 @@ func (w *WebSearchClient) ExtractURLs(ctx context.Context, urls []string) (strin
 		return "", fmt.Errorf("no URLs provided")
 	}
 
-	var processedURLs []string
-	youtubeExtractor := utils.NewYouTubeURLExtractor()
+	// Create a stable key for singleflight by sorting and joining the URLs.
+	sort.Strings(urls)
+	key := strings.Join(urls, ";")
 
-	for _, u := range urls {
-		if youtubeExtractor.IsYouTubeURL(u) {
-			_, isPlaylist := youtubeExtractor.ExtractPlaylistID(u)
-			if isPlaylist {
-				// It's a playlist, get all video URLs from it
-				videoURLs, err := utils.GetPlaylistVideoURLs(u, w.config.WebSearch.YouTubeAPIKey)
-				if err != nil {
-					log.Printf("Failed to get videos from playlist %s: %v", u, err)
-					// Add the playlist URL itself to be processed, which might result in an error
-					// but at least we acknowledge it was requested.
+	// Use singleflight to ensure only one extraction is in-flight for a given set of URLs.
+	res, err, _ := w.fetchGroup.Do(key, func() (interface{}, error) {
+		var processedURLs []string
+		youtubeExtractor := utils.NewYouTubeURLExtractor()
+
+		for _, u := range urls {
+			if youtubeExtractor.IsYouTubeURL(u) {
+				_, isPlaylist := youtubeExtractor.ExtractPlaylistID(u)
+				if isPlaylist {
+					videoURLs, err := utils.GetPlaylistVideoURLs(u, w.config.WebSearch.YouTubeAPIKey)
+					if err != nil {
+						log.Printf("Failed to get videos from playlist %s: %v", u, err)
+						processedURLs = append(processedURLs, u)
+						continue
+					}
+					processedURLs = append(processedURLs, videoURLs...)
+				} else {
 					processedURLs = append(processedURLs, u)
-					continue
 				}
-				processedURLs = append(processedURLs, videoURLs...)
 			} else {
-				// It's a single video URL
 				processedURLs = append(processedURLs, u)
 			}
-		} else {
-			// Not a YouTube URL
-			processedURLs = append(processedURLs, u)
 		}
-	}
 
-	// Validate URL limit
-	if len(processedURLs) > w.config.WebSearch.MaxURLsPerExtract {
-		return "", fmt.Errorf("too many URLs after expanding playlists: maximum %d URLs per request, got %d", w.config.WebSearch.MaxURLsPerExtract, len(processedURLs))
-	}
-
-	// Prepare request
-	extractReq := ExtractRequest{
-		URLs:          processedURLs,
-		MaxCharPerURL: w.config.WebSearch.MaxChars,
-	}
-
-	// Convert to JSON
-	jsonData, err := json.Marshal(extractReq)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create HTTP request
-	url := w.config.WebSearch.BaseURL + "/extract"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	// Make request
-	resp, err := w.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			log.Printf("Failed to close response body: %v", err)
+		if len(processedURLs) > w.config.WebSearch.MaxURLsPerExtract {
+			return nil, fmt.Errorf("too many URLs after expanding playlists: maximum %d URLs per request, got %d", w.config.WebSearch.MaxURLsPerExtract, len(processedURLs))
 		}
-	}()
 
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("URL extract API returned status %d", resp.StatusCode)
+		extractReq := ExtractRequest{
+			URLs:          processedURLs,
+			MaxCharPerURL: w.config.WebSearch.MaxChars,
+		}
+
+		jsonData, err := json.Marshal(extractReq)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		url := w.config.WebSearch.BaseURL + "/extract"
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := w.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to make request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("URL extract API returned status %d", resp.StatusCode)
+		}
+
+		var extractResp ExtractResponsePayload
+		if err := json.NewDecoder(resp.Body).Decode(&extractResp); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+
+		if extractResp.Error != nil {
+			return nil, fmt.Errorf("URL extract API error: %s", *extractResp.Error)
+		}
+
+		return w.formatter.FormatExtractResults(&extractResp), nil
+	})
+
+	if err != nil {
+		return "", err
 	}
 
-	// Parse response
-	var extractResp ExtractResponsePayload
-	if err := json.NewDecoder(resp.Body).Decode(&extractResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// Check for API error
-	if extractResp.Error != nil {
-		return "", fmt.Errorf("URL extract API error: %s", *extractResp.Error)
-	}
-
-	// Format results using the formatter
-	return w.formatter.FormatExtractResults(&extractResp), nil
+	return res.(string), nil
 }
 
 // DetectURLs detects URLs in the given text with improved YouTube URL handling

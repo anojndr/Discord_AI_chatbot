@@ -14,44 +14,59 @@ import (
 
 // downloadImageFromURL downloads an image from a URL and returns the image data and MIME type
 func (c *LLMClient) downloadImageFromURL(ctx context.Context, imageURL string) ([]byte, string, error) {
-	// Generate cache key from URL hash
-	hasher := sha256.New()
-	hasher.Write([]byte(imageURL))
-	cacheKey := hex.EncodeToString(hasher.Sum(nil))
+	// Use the URL itself as the key for singleflight
+	// The result from Do will be a struct containing all our return values
+	type downloadResult struct {
+		Data     []byte
+		MIMEType string
+		Err      error
+	}
 
-	// Check cache first (especially important for data URLs)
-	c.imageCacheMu.RLock()
-	if entry, exists := c.imageCache.Get(cacheKey); exists {
+	// singleflight.Group.Do executes and returns the results of the given
+	// function, making sure that only one execution is in-flight for a
+	// given key at a time.
+	res, err, _ := c.fetchGroup.Do(imageURL, func() (interface{}, error) {
+		// This function will only be executed once for a given imageURL across all goroutines.
+		// Check cache first inside the single-flight function
+		hasher := sha256.New()
+		hasher.Write([]byte(imageURL))
+		cacheKey := hex.EncodeToString(hasher.Sum(nil))
+
+		c.imageCacheMu.RLock()
+		if entry, exists := c.imageCache.Get(cacheKey); exists {
+			c.imageCacheMu.RUnlock()
+			return &downloadResult{Data: entry.Data, MIMEType: entry.MIMEType}, nil
+		}
 		c.imageCacheMu.RUnlock()
-		return entry.Data, entry.MIMEType, nil
-	}
-	c.imageCacheMu.RUnlock()
 
-	// Process the image
-	var imageData []byte
-	var mimeType string
-	var err error
+		var imageData []byte
+		var mimeType string
+		var downloadErr error
 
-	// Check if it's a data URL
-	if strings.HasPrefix(imageURL, "data:") {
-		imageData, mimeType, err = c.parseDataURL(imageURL)
-	} else {
-		imageData, mimeType, err = c.downloadFromHTTP(ctx, imageURL)
-	}
+		if strings.HasPrefix(imageURL, "data:") {
+			imageData, mimeType, downloadErr = c.parseDataURL(imageURL)
+		} else {
+			imageData, mimeType, downloadErr = c.downloadFromHTTP(ctx, imageURL)
+		}
+
+		if downloadErr != nil {
+			return nil, downloadErr // Let singleflight propagate the error
+		}
+
+		// Cache the result
+		c.imageCacheMu.Lock()
+		c.imageCache.Add(cacheKey, &ImageCacheEntry{Data: imageData, MIMEType: mimeType})
+		c.imageCacheMu.Unlock()
+
+		return &downloadResult{Data: imageData, MIMEType: mimeType}, nil
+	})
 
 	if err != nil {
 		return nil, "", err
 	}
 
-	// Cache the result
-	c.imageCacheMu.Lock()
-	c.imageCache.Add(cacheKey, &ImageCacheEntry{
-		Data:     imageData,
-		MIMEType: mimeType,
-	})
-	c.imageCacheMu.Unlock()
-
-	return imageData, mimeType, nil
+	result := res.(*downloadResult)
+	return result.Data, result.MIMEType, result.Err
 }
 
 // downloadFromHTTP downloads an image from an HTTP URL

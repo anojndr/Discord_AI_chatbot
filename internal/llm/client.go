@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/hashicorp/golang-lru/v2"
 	"google.golang.org/genai"
 	openai "github.com/sashabaranov/go-openai"
@@ -38,6 +40,7 @@ type LLMClient struct {
 	imageCache     *lru.Cache[string, *ImageCacheEntry]
 	imageCacheMu   sync.RWMutex
 	httpClient     *http.Client
+	fetchGroup     singleflight.Group
 }
 
 // Client is an alias for LLMClient for convenience
