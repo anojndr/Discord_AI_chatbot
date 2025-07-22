@@ -249,7 +249,11 @@ func (w *WebSearchClient) DecideWebSearch(ctx context.Context, llmClient *llm.LL
 	}
 
 	// Collect the response
-	var responseContent strings.Builder
+	responseContent := builderPool.Get().(*strings.Builder)
+	defer func() {
+		responseContent.Reset()
+		builderPool.Put(responseContent)
+	}()
 	for response := range stream {
 		if response.Error != nil {
 			return nil, fmt.Errorf("stream error: %w", response.Error)
@@ -320,7 +324,11 @@ func (w *WebSearchClient) SearchMultiple(ctx context.Context, queries []string) 
 	wg.Wait()
 
 	// Combine results in original order
-	var allResults strings.Builder
+	allResults := builderPool.Get().(*strings.Builder)
+	defer func() {
+		allResults.Reset()
+		builderPool.Put(allResults)
+	}()
 	for i, res := range results {
 		if i > 0 {
 			allResults.WriteString("\n\n--- Search Query " + fmt.Sprintf("%d", i+1) + " ---\n")

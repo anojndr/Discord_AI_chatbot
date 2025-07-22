@@ -17,6 +17,12 @@ import (
 	"golang.org/x/image/font/basicfont"
 )
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
+
 // TableRenderer handles converting markdown tables to images
 type TableRenderer struct {
 	initialized   bool
@@ -212,8 +218,12 @@ func (tr *TableRenderer) RenderTableToImage(ctx context.Context, table MarkdownT
 	}
 
 	// Convert to PNG bytes
-	var buf bytes.Buffer
-	err = png.Encode(&buf, dc.Image())
+	buf := bufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		buf.Reset()
+		bufferPool.Put(buf)
+	}()
+	err = png.Encode(buf, dc.Image())
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode PNG: %w", err)
 	}

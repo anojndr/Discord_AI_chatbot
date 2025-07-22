@@ -6,14 +6,25 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"sync"
 	"time"
 )
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
 
 const catboxAPIURL = "https://catbox.moe/user/api.php"
 
 // UploadToCatbox uploads a file to Catbox.moe and returns the URL.
 func UploadToCatbox(filename string, fileData []byte) (string, error) {
-	body := &bytes.Buffer{}
+	body := bufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		body.Reset()
+		bufferPool.Put(body)
+	}()
 	writer := multipart.NewWriter(body)
 
 	// Add the request type

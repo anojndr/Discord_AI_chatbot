@@ -7,12 +7,19 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	"DiscordAIChatbot/internal/config"
 	"DiscordAIChatbot/internal/llm"
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/utils"
 )
+
+var builderPool = sync.Pool{
+	New: func() interface{} {
+		return &strings.Builder{}
+	},
+}
 
 // ConversationPair represents a user message and its corresponding assistant response
 type ConversationPair struct {
@@ -115,7 +122,11 @@ func (cs *ContextSummarizer) SummarizePairs(ctx context.Context, pairs []Convers
 
 // buildConversationText converts conversation pairs into a readable text format for summarization
 func (cs *ContextSummarizer) buildConversationText(pairs []ConversationPair) string {
-	var builder strings.Builder
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 	
 	for i, pair := range pairs {
 		if i > 0 {

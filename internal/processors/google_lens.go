@@ -9,10 +9,17 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"DiscordAIChatbot/internal/config"
 	"DiscordAIChatbot/internal/storage"
 )
+
+var builderPool = sync.Pool{
+	New: func() interface{} {
+		return &strings.Builder{}
+	},
+}
 
 // GoogleLensClient handles requests to the SerpAPI Google Lens endpoint.
 type GoogleLensClient struct {
@@ -265,7 +272,11 @@ func (g *GoogleLensClient) searchWithKey(ctx context.Context, imageURL string, o
 	}
 
 	// Build readable output (limit to first 5 visual matches for brevity)
-	var builder strings.Builder
+	builder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		builder.Reset()
+		builderPool.Put(builder)
+	}()
 	builder.WriteString("Google Lens Results\n")
 	builder.WriteString(fmt.Sprintf("Status: %s | Search ID: %s\n\n", glResp.SearchMetadata.Status, glResp.SearchMetadata.ID))
 

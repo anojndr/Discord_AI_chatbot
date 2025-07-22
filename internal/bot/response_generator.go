@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -14,6 +15,12 @@ import (
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/utils"
 )
+
+var builderPool = sync.Pool{
+	New: func() interface{} {
+		return &strings.Builder{}
+	},
+}
 
 // generateResponse generates and sends LLM response
 func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.MessageCreate, model string, messages []messaging.OpenAIMessage, warnings []string, progressMgr *utils.ProgressManager, messageRef *discordgo.MessageReference, targetChannelID string, webSearchPerformed bool, searchResultCount int) {
@@ -130,6 +137,12 @@ processStream:
 
 	var responseMessages []*discordgo.Message
 	var responseContents []*strings.Builder
+	defer func() {
+		for _, builder := range responseContents {
+			builder.Reset()
+			builderPool.Put(builder)
+		}
+	}()
 	var editTask *time.Timer
 	var generatedImages [][]byte // Store generated images
 	var imageMIMETypes []string  // Store MIME types for images
@@ -309,10 +322,12 @@ processStream:
 			}
 
 			// Now start new message
-			responseContents = append(responseContents, &strings.Builder{})
+			builder := builderPool.Get().(*strings.Builder)
+			responseContents = append(responseContents, builder)
 		} else if needsNewMsg {
 			// First message
-			responseContents = append(responseContents, &strings.Builder{})
+			builder := builderPool.Get().(*strings.Builder)
+			responseContents = append(responseContents, builder)
 		}
 
 		responseContents[len(responseContents)-1].WriteString(response.Content)
@@ -513,7 +528,11 @@ processStream:
 	}
 
 	// Update response nodes with full content
-	var fullContentBuilder strings.Builder
+	fullContentBuilder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		fullContentBuilder.Reset()
+		builderPool.Put(fullContentBuilder)
+	}()
 	for _, sb := range responseContents {
 		fullContentBuilder.WriteString(sb.String())
 	}

@@ -6,12 +6,19 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 )
+
+var builderPool = sync.Pool{
+	New: func() interface{} {
+		return &strings.Builder{}
+	},
+}
 
 // RodTableConverter handles converting markdown tables to images using Rod browser automation
 type RodTableConverter struct {
@@ -175,7 +182,11 @@ func (rtc *RodTableConverter) parseMarkdownTable(markdown string) (*TableData, e
 
 // generateTableHTML creates an HTML representation of the table with CSS styling
 func (rtc *RodTableConverter) generateTableHTML(tableData *TableData) string {
-	var htmlBuilder strings.Builder
+	htmlBuilder := builderPool.Get().(*strings.Builder)
+	defer func() {
+		htmlBuilder.Reset()
+		builderPool.Put(htmlBuilder)
+	}()
 
 	// Start HTML document with dark mode CSS styling
 	htmlBuilder.WriteString(`<!DOCTYPE html>
