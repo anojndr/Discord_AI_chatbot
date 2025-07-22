@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -17,6 +18,9 @@ type Config struct {
 	BotToken      string `yaml:"bot_token"`
 	ClientID      string `yaml:"client_id"`
 	StatusMessage string `yaml:"status_message"`
+
+	// Worker settings
+	WorkerCount int `yaml:"worker_count"`
 
 	// Default model for new users
 	DefaultModel string `yaml:"default_model"`
@@ -309,6 +313,9 @@ func parseConfig(data []byte) (*Config, error) {
 	}
 	if !config.UseThreads {
 		config.UseThreads = DefaultUseThreads
+	}
+	if config.WorkerCount == 0 {
+		config.WorkerCount = runtime.NumCPU() * 2 // Default to 2x threads for I/O-bound tasks
 	}
 
 	// Set web search defaults

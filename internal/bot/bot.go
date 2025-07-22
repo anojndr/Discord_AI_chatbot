@@ -111,7 +111,8 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 // Start starts the Discord bot
 func (b *Bot) Start() error {
 	// Start worker pool
-	workerCount := 8 // Match your CPU threads
+	cfg := b.config.Load()
+	workerCount := cfg.WorkerCount
 	for i := 0; i < workerCount; i++ {
 		b.activeGoroutines.Add(1)
 		go func(workerID int) {
