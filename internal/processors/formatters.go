@@ -94,8 +94,6 @@ func (f *WebSearchResultFormatter) ExtractContentFromData(data interface{}, sour
 	switch sourceType {
 	case "youtube":
 		return f.formatYouTubeData(dataMap)
-	case "youtube_playlist":
-		return f.formatYouTubePlaylistData(dataMap)
 	case "reddit":
 		return f.formatRedditData(dataMap)
 	case "pdf":
@@ -130,22 +128,9 @@ func (f *WebSearchResultFormatter) formatYouTubeData(data map[string]interface{}
 	// Handle structured comments array as per API docs
 	if comments, ok := data["comments"].([]interface{}); ok && len(comments) > 0 {
 		parts = append(parts, "Comments:")
-		for i, comment := range comments {
-			// Remove comment limit - include all comments
-			_ = i // Keep variable to avoid unused variable error
-			if commentStr, ok := comment.(string); ok && commentStr != "" {
-				parts = append(parts, fmt.Sprintf("  - %s", commentStr))
-			} else if commentMap, ok := comment.(map[string]interface{}); ok {
-				var commentParts []string
-				if author, exists := commentMap["author"].(string); exists && author != "" {
-					commentParts = append(commentParts, fmt.Sprintf("@%s", author))
-				}
-				if text, exists := commentMap["text"].(string); exists && text != "" {
-					commentParts = append(commentParts, text)
-				}
-				if len(commentParts) > 0 {
-					parts = append(parts, fmt.Sprintf("  - %s", strings.Join(commentParts, ": ")))
-				}
+		for _, comment := range comments {
+			if commentMap, ok := comment.(map[string]interface{}); ok {
+				parts = append(parts, f.formatYouTubeComment(commentMap, 1))
 			}
 		}
 	}
@@ -363,35 +348,31 @@ func (f *WebSearchResultFormatter) formatGenericData(data map[string]interface{}
 	return strings.Join(parts, "\n")
 }
 
-// formatYouTubePlaylistData formats YouTube playlist data
-func (f *WebSearchResultFormatter) formatYouTubePlaylistData(data map[string]interface{}) string {
-	var parts []string
+// formatYouTubeComment formats a single YouTube comment and its replies recursively
+func (f *WebSearchResultFormatter) formatYouTubeComment(comment map[string]interface{}, depth int) string {
+	var builder strings.Builder
+	indent := strings.Repeat("    ", depth-1)
 
-	if title, ok := data["title"].(string); ok && title != "" {
-		parts = append(parts, fmt.Sprintf("Playlist Title: %s", title))
+	var commentParts []string
+	if author, ok := comment["author"].(string); ok && author != "" {
+		commentParts = append(commentParts, fmt.Sprintf("@%s", author))
+	}
+	if text, ok := comment["text"].(string); ok && text != "" {
+		commentParts = append(commentParts, text)
+	}
+	if likes, ok := comment["likes"].(float64); ok && likes > 0 {
+		commentParts = append(commentParts, fmt.Sprintf("(%d likes)", int(likes)))
 	}
 
-	if channel, ok := data["channel_name"].(string); ok && channel != "" {
-		parts = append(parts, fmt.Sprintf("Channel: %s", channel))
-	}
+	builder.WriteString(fmt.Sprintf("%s- %s\n", indent, strings.Join(commentParts, " ")))
 
-	if videos, ok := data["videos"].([]interface{}); ok && len(videos) > 0 {
-		parts = append(parts, "\nVideos in this playlist:")
-		for i, video := range videos {
-			if videoMap, ok := video.(map[string]interface{}); ok {
-				var videoParts []string
-				if videoTitle, exists := videoMap["title"].(string); exists {
-					videoParts = append(videoParts, fmt.Sprintf("%d. %s", i+1, videoTitle))
-				}
-				if videoID, exists := videoMap["video_id"].(string); exists {
-					videoParts = append(videoParts, fmt.Sprintf("(ID: %s)", videoID))
-				}
-				if len(videoParts) > 0 {
-					parts = append(parts, fmt.Sprintf("  - %s", strings.Join(videoParts, " ")))
-				}
+	if replies, ok := comment["replies"].([]interface{}); ok && len(replies) > 0 {
+		for _, reply := range replies {
+			if replyMap, ok := reply.(map[string]interface{}); ok {
+				builder.WriteString(f.formatYouTubeComment(replyMap, depth+1))
 			}
 		}
 	}
 
-	return strings.Join(parts, "\n")
+	return builder.String()
 }
