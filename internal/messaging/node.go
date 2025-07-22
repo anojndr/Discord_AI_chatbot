@@ -54,6 +54,12 @@ type AudioContent struct {
 	Data     []byte `json:"data,omitempty"`
 }
 
+// ProcessedNode is a container for a message ID and its corresponding MsgNode, used for batch saving.
+type ProcessedNode struct {
+	MessageID string
+	Node      *MsgNode
+}
+
 // MessageContent represents content for OpenAI API
 type MessageContent struct {
 	Type           string                 `json:"type"`

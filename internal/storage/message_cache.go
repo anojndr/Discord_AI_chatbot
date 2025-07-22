@@ -14,20 +14,24 @@ import (
 	"DiscordAIChatbot/internal/messaging"
 )
 
+const (
+	batchSize    = 50
+	batchTimeout = 5 * time.Second
+)
+
 // MessageNodeCache provides simple persistence for processed MsgNode objects.
 // The data is stored as JSONB so the schema can evolve without migrations.
 // Only the fields needed to skip expensive re-processing are kept.
 // ParentMsg and mutex fields are deliberately omitted.
-
 type MessageNodeCache struct {
-	db           *sql.DB
-	mu           sync.RWMutex
-	saveNodeStmt *sql.Stmt
-	getNodeStmt  *sql.Stmt
+	db        *sql.DB
+	mu        sync.RWMutex
+	nodeQueue chan *messaging.ProcessedNode
+	wg        sync.WaitGroup
 }
 
 // msgNodeSerializable mirrors messaging.MsgNode but excludes unmarshalable fields.
-// We dont embed RWMutex and ParentMsg to keep JSON lean.
+// We don t embed RWMutex and ParentMsg to keep JSON lean.
 
 type msgNodeSerializable struct {
 	Text               string                            `json:"text"`
@@ -53,63 +57,155 @@ func NewMessageNodeCache(dbURL string) *MessageNodeCache {
 		log.Fatalf("Failed to get database connection: %v", err)
 	}
 
-	cache := &MessageNodeCache{db: db}
-	cache.prepareStatements()
+	queue := make(chan *messaging.ProcessedNode, batchSize*2)
+	cache := &MessageNodeCache{
+		db:        db,
+		nodeQueue: queue,
+	}
+
+	cache.wg.Add(1)
+	go cache.batchWorker()
+
 	return cache
 }
 
-func (c *MessageNodeCache) prepareStatements() {
-	var err error
-	c.saveNodeStmt, err = c.db.PrepareContext(context.Background(), `
-        INSERT INTO message_nodes (message_id, data, updated_at)
-        VALUES ($1, $2, $3)
-        ON CONFLICT(message_id) DO UPDATE SET
-            data = EXCLUDED.data,
-            updated_at = EXCLUDED.updated_at
-    `)
-	if err != nil {
-		log.Fatalf("Failed to prepare saveNodeStmt: %v", err)
-	}
-	c.getNodeStmt, err = c.db.PrepareContext(context.Background(), `SELECT data FROM message_nodes WHERE message_id = $1`)
-	if err != nil {
-		log.Fatalf("Failed to prepare getNodeStmt: %v", err)
+func (c *MessageNodeCache) batchWorker() {
+	defer c.wg.Done()
+	batch := make([]*messaging.ProcessedNode, 0, batchSize)
+	ticker := time.NewTicker(batchTimeout)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case node, ok := <-c.nodeQueue:
+			if !ok {
+				// Channel closed, save remaining batch and exit
+				if len(batch) > 0 {
+					if err := c.saveNodes(context.Background(), batch); err != nil {
+						log.Printf("Error saving final batch: %v", err)
+					}
+				}
+				return
+			}
+			batch = append(batch, node)
+			if len(batch) >= batchSize {
+				if err := c.saveNodes(context.Background(), batch); err != nil {
+					log.Printf("Error saving batch: %v", err)
+				}
+				batch = make([]*messaging.ProcessedNode, 0, batchSize) // Reset batch
+			}
+		case <-ticker.C:
+			// Timeout, save whatever is in the batch
+			if len(batch) > 0 {
+				if err := c.saveNodes(context.Background(), batch); err != nil {
+					log.Printf("Error saving batch on timeout: %v", err)
+				}
+				batch = make([]*messaging.ProcessedNode, 0, batchSize) // Reset batch
+			}
+		}
 	}
 }
 
-// SaveNode upserts a processed node into the cache.
+// SaveNode sends a processed node to the batching queue.
 func (c *MessageNodeCache) SaveNode(ctx context.Context, messageID string, node *messaging.MsgNode) error {
 	if node == nil || messageID == "" {
 		return nil
 	}
 
-	c.mu.RLock()
-	serial := msgNodeSerializable{
-		Text:               node.GetText(),
-		Images:             node.GetImages(),
-		GeneratedImages:    node.GetGeneratedImages(),
-		Role:               node.Role,
-		UserID:             node.UserID,
-		HasBadAttachments:  node.HasBadAttachments,
-		FetchParentFailed:  node.FetchParentFailed,
-		WebSearchPerformed: node.WebSearchPerformed,
-		SearchResultCount:  node.SearchResultCount,
+	processedNode := &messaging.ProcessedNode{
+		MessageID: messageID,
+		Node:      node,
 	}
-	c.mu.RUnlock()
 
-	data, err := json.Marshal(serial)
+	select {
+	case c.nodeQueue <- processedNode:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		log.Printf("Warning: Message node queue is full. Discarding node %s.", messageID)
+		return fmt.Errorf("node queue is full")
+	}
+}
+
+// saveNodes uses `COPY FROM` for efficient bulk insertion/updates.
+func (c *MessageNodeCache) saveNodes(ctx context.Context, nodes []*messaging.ProcessedNode) error {
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to marshal node: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Create a temporary table to hold the batch data
+	_, err = tx.ExecContext(ctx, `
+		CREATE TEMP TABLE temp_message_nodes (
+			message_id TEXT PRIMARY KEY,
+			data JSONB NOT NULL,
+			updated_at BIGINT NOT NULL
+		) ON COMMIT DROP
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create temp table: %w", err)
 	}
 
-	_, err = c.saveNodeStmt.ExecContext(ctx, messageID, data, time.Now().Unix())
+	// Use pgx-specific COPY FROM
+	stmt, err := tx.PrepareContext(ctx, `COPY temp_message_nodes (message_id, data, updated_at) FROM STDIN`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare copy statement: %w", err)
+	}
 
-	return err
+	for _, pNode := range nodes {
+		serial := msgNodeSerializable{
+			Text:               pNode.Node.GetText(),
+			Images:             pNode.Node.GetImages(),
+			GeneratedImages:    pNode.Node.GetGeneratedImages(),
+			Role:               pNode.Node.Role,
+			UserID:             pNode.Node.UserID,
+			HasBadAttachments:  pNode.Node.HasBadAttachments,
+			FetchParentFailed:  pNode.Node.FetchParentFailed,
+			WebSearchPerformed: pNode.Node.WebSearchPerformed,
+			SearchResultCount:  pNode.Node.SearchResultCount,
+		}
+		data, err := json.Marshal(serial)
+		if err != nil {
+			log.Printf("Failed to marshal node %s: %v", pNode.MessageID, err)
+			continue // Skip this node
+		}
+		_, err = stmt.ExecContext(ctx, pNode.MessageID, data, time.Now().Unix())
+		if err != nil {
+			return fmt.Errorf("failed to execute copy: %w", err)
+		}
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close copy statement: %w", err)
+	}
+
+	// Upsert from the temporary table to the main table
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO message_nodes (message_id, data, updated_at)
+		SELECT message_id, data, updated_at FROM temp_message_nodes
+		ON CONFLICT (message_id) DO UPDATE SET
+			data = EXCLUDED.data,
+			updated_at = EXCLUDED.updated_at
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to upsert from temp table: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // GetNode retrieves a cached node. Returns (nil, nil) if not found.
 func (c *MessageNodeCache) GetNode(ctx context.Context, messageID string) (*messaging.MsgNode, error) {
 	var rawData []byte
-	err := c.getNodeStmt.QueryRowContext(ctx, messageID).Scan(&rawData)
+	// Since writes are now async, we can't rely on a prepared statement from the old struct
+	err := c.db.QueryRowContext(ctx, `SELECT data FROM message_nodes WHERE message_id = $1`, messageID).Scan(&rawData)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // cache miss
@@ -137,14 +233,9 @@ func (c *MessageNodeCache) GetNode(ctx context.Context, messageID string) (*mess
 }
 
 
-// Close closes the underlying DB connection.
+// Close closes the underlying DB connection and waits for the batch worker to finish.
 func (c *MessageNodeCache) Close() error {
-	var err error
-	if err = c.saveNodeStmt.Close(); err != nil {
-		log.Printf("Failed to close saveNodeStmt: %v", err)
-	}
-	if err = c.getNodeStmt.Close(); err != nil {
-		log.Printf("Failed to close getNodeStmt: %v", err)
-	}
-	return err
+	close(c.nodeQueue)
+	c.wg.Wait()
+	return nil
 }
