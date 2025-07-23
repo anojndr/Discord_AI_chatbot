@@ -238,7 +238,8 @@ func (w *WebSearchClient) DecideWebSearch(ctx context.Context, llmClient *llm.LL
 	})
 
 	// Get response from LLM with fallback
-	stream, fallbackResult, err := llmClient.StreamChatCompletionWithFallback(ctx, model, messages)
+	fallbackModel := w.config.WebSearch.FallbackModel
+	stream, fallbackResult, err := llmClient.StreamChatCompletionWithFallback(ctx, model, messages, fallbackModel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get web search decision from LLM (original and fallback models failed): %w", err)
 	}

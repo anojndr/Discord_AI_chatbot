@@ -620,8 +620,9 @@ type FallbackResult struct {
 	OriginalError   error
 }
 
-// StreamChatCompletionWithFallback streams chat completion with GPT 4.1 fallback
-func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model string, messages []messaging.OpenAIMessage) (<-chan StreamResponse, *FallbackResult, error) {
+// StreamChatCompletionWithFallback streams chat completion with an optional fallback model.
+// If fallbackModel is an empty string, no fallback will be attempted.
+func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model string, messages []messaging.OpenAIMessage, fallbackModel string) (<-chan StreamResponse, *FallbackResult, error) {
 	fallbackResult := &FallbackResult{
 		UsedFallback:  false,
 		FallbackModel: "",
@@ -631,31 +632,35 @@ func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model 
 	// Try original model first
 	stream, err := c.StreamChatCompletion(ctx, model, messages)
 	if err != nil {
-		logging.LogToFile("Original model %s failed, attempting GPT 4.1 fallback: %v", model, err)
+		// If there's no fallback model, return the error immediately
+		if fallbackModel == "" {
+			return nil, fallbackResult, err
+		}
+
+		logging.LogToFile("Original model %s failed, attempting fallback to %s: %v", model, fallbackModel, err)
 		
 		// Store the original error
 		fallbackResult.OriginalError = err
-		
-		// Try GPT 4.1 fallback
-		fallbackModel := "pollinations/o3"
 		fallbackResult.FallbackModel = fallbackModel
 		
+		// Try fallback model
 		fallbackStream, fallbackErr := c.StreamChatCompletion(ctx, fallbackModel, messages)
 		if fallbackErr != nil {
-			logging.LogToFile("GPT 4.1 fallback also failed: %v", fallbackErr)
+			logging.LogToFile("Fallback model %s also failed: %v", fallbackModel, fallbackErr)
 			return nil, fallbackResult, fmt.Errorf("both original model (%s) and fallback model (%s) failed. Original error: %w, Fallback error: %v", model, fallbackModel, err, fallbackErr)
 		}
 		
 		fallbackResult.UsedFallback = true
-		logging.LogToFile("Successfully switched to GPT 4.1 fallback model")
+		logging.LogToFile("Successfully switched to fallback model %s", fallbackModel)
 		return fallbackStream, fallbackResult, nil
 	}
 	
 	return stream, fallbackResult, nil
 }
 
-// GetChatCompletionWithFallback gets a complete chat completion with GPT 4.1 fallback
-func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages []messaging.OpenAIMessage, model string) (string, *FallbackResult, error) {
+// GetChatCompletionWithFallback gets a complete chat completion with an optional fallback model.
+// If fallbackModel is an empty string, no fallback will be attempted.
+func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages []messaging.OpenAIMessage, model string, fallbackModel string) (string, *FallbackResult, error) {
 	fallbackResult := &FallbackResult{
 		UsedFallback:  false,
 		FallbackModel: "",
@@ -665,23 +670,26 @@ func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages 
 	// Try original model first
 	response, err := c.GetChatCompletion(ctx, messages, model)
 	if err != nil {
-		logging.LogToFile("Original model %s failed, attempting GPT 4.1 fallback: %v", model, err)
+		// If there's no fallback model, return the error immediately
+		if fallbackModel == "" {
+			return "", fallbackResult, err
+		}
+
+		logging.LogToFile("Original model %s failed, attempting fallback to %s: %v", model, fallbackModel, err)
 		
 		// Store the original error
 		fallbackResult.OriginalError = err
-		
-		// Try GPT 4.1 fallback
-		fallbackModel := "pollinations/o3"
 		fallbackResult.FallbackModel = fallbackModel
 		
+		// Try fallback model
 		fallbackResponse, fallbackErr := c.GetChatCompletion(ctx, messages, fallbackModel)
 		if fallbackErr != nil {
-			logging.LogToFile("GPT 4.1 fallback also failed: %v", fallbackErr)
+			logging.LogToFile("Fallback model %s also failed: %v", fallbackModel, fallbackErr)
 			return "", fallbackResult, fmt.Errorf("both original model (%s) and fallback model (%s) failed. Original error: %w, Fallback error: %v", model, fallbackModel, err, fallbackErr)
 		}
 		
 		fallbackResult.UsedFallback = true
-		logging.LogToFile("Successfully switched to GPT 4.1 fallback model")
+		logging.LogToFile("Successfully switched to fallback model %s", fallbackModel)
 		return fallbackResponse, fallbackResult, nil
 	}
 	

@@ -54,6 +54,7 @@ type Config struct {
 		MaxChars          int    `yaml:"max_chars_per_url"`
 		MaxURLsPerExtract int    `yaml:"max_urls_per_extract"`
 		Model             string `yaml:"model"`
+		FallbackModel     string `yaml:"fallback_model"`
 		DeciderPrompt     string `yaml:"decider_prompt"`
 		YouTubeAPIKey     string `yaml:"youtube_api_key"`
 	} `yaml:"web_search"`
