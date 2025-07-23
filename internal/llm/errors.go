@@ -41,6 +41,7 @@ func (c *LLMClient) isAPIKeyError(err error) bool {
 		"rate limit",
 		"insufficient funds",
 		"billing",
+		"billed users",
 	}
 
 	for _, pattern := range apiKeyErrorPatterns {

@@ -497,6 +497,11 @@ func (g *GeminiProvider) GenerateImage(ctx context.Context, model string, prompt
 		if err != nil {
 			if isAPIKeyError(err) || is503Error(err) || isInternalError(err) {
 				log.Printf("Retriable error during image generation: %v", err)
+				if isAPIKeyError(err) {
+					if err := g.apiKeyManager.MarkKeyAsBad(ctx, providerName, apiKey, err.Error()); err != nil {
+						log.Printf("Failed to mark API key as bad: %v", err)
+					}
+				}
 				continue
 			}
 			return nil, fmt.Errorf("failed to generate images: %w", err)
