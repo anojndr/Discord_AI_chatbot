@@ -412,9 +412,21 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 
 					// Check if generation is finished
 					if candidate.FinishReason != "" {
-						logging.LogExternalContentToFile("Gemini Response Finish Reason: %s", string(candidate.FinishReason))
-						responseChan <- StreamResponse{
-							FinishReason: string(candidate.FinishReason),
+						finishReasonStr := string(candidate.FinishReason)
+						logging.LogExternalContentToFile("Gemini Response Finish Reason: %s", finishReasonStr)
+
+						// Check for abnormal finish reasons that should trigger a fallback
+						switch candidate.FinishReason {
+						case genai.FinishReasonStop, genai.FinishReasonMaxTokens:
+							// These are normal finish reasons, pass them through
+							responseChan <- StreamResponse{
+								FinishReason: finishReasonStr,
+							}
+						default:
+							// Any other reason is considered a premature finish that should trigger a fallback
+							responseChan <- StreamResponse{
+								Error: &PrematureStreamFinishError{FinishReason: finishReasonStr},
+							}
 						}
 						return
 					}

@@ -237,39 +237,32 @@ func (w *WebSearchClient) DecideWebSearch(ctx context.Context, llmClient *llm.LL
 		Content: userContent,
 	})
 
-	// Get response from LLM with fallback
-	fallbackModel := w.config.WebSearch.FallbackModel
-	stream, fallbackResult, err := llmClient.StreamChatCompletionWithFallback(ctx, model, messages, fallbackModel)
+	// Get response from LLM, with manual fallback handling for in-stream errors
+	responseContent, err := w.getDecisionFromModel(ctx, llmClient, model, messages)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get web search decision from LLM (original and fallback models failed): %w", err)
-	}
-	
-	// Log if fallback was used
-	if fallbackResult.UsedFallback {
-		log.Printf("Web search decision: Using fallback model %s (original model %s failed)", fallbackResult.FallbackModel, model)
-	}
-
-	// Collect the response
-	responseContent := builderPool.Get().(*strings.Builder)
-	defer func() {
-		responseContent.Reset()
-		builderPool.Put(responseContent)
-	}()
-	for response := range stream {
-		if response.Error != nil {
-			return nil, fmt.Errorf("stream error: %w", response.Error)
-		}
-		if response.Content != "" {
-			responseContent.WriteString(response.Content)
-		}
-		if response.FinishReason != "" {
-			break
+		// Check if the error warrants a fallback
+		if llmClient.ShouldFallback(err) {
+			log.Printf("Web search decider failed with primary model %s, attempting fallback: %v", model, err)
+			fallbackModel := w.config.WebSearch.FallbackModel
+			if fallbackModel != "" {
+				log.Printf("Attempting web search decider with fallback model %s", fallbackModel)
+				responseContent, err = w.getDecisionFromModel(ctx, llmClient, fallbackModel, messages)
+				if err != nil {
+					return nil, fmt.Errorf("web search decider failed with both primary and fallback models: %w", err)
+				}
+				log.Printf("Successfully used fallback model %s for web search decision", fallbackModel)
+			} else {
+				return nil, fmt.Errorf("web search decider failed and no fallback model is configured: %w", err)
+			}
+		} else {
+			// Non-fallbackable error
+			return nil, fmt.Errorf("web search decider failed with non-fallbackable error: %w", err)
 		}
 	}
 
 	// Parse JSON response
 	var decision WebSearchDecision
-	responseText := strings.TrimSpace(responseContent.String())
+	responseText := strings.TrimSpace(responseContent)
 
 	// Extract JSON from response (in case there's extra text)
 	startIdx := strings.Index(responseText, "{")
@@ -557,4 +550,35 @@ func isLikelyFilename(s string) bool {
 	}
 
 	return false
+}
+func (w *WebSearchClient) getDecisionFromModel(ctx context.Context, llmClient *llm.LLMClient, model string, messages []messaging.OpenAIMessage) (string, error) {
+	stream, err := llmClient.StreamChatCompletion(ctx, model, messages)
+	if err != nil {
+		return "", fmt.Errorf("failed to start stream with model %s: %w", model, err)
+	}
+
+	responseContent := builderPool.Get().(*strings.Builder)
+	defer func() {
+		responseContent.Reset()
+		builderPool.Put(responseContent)
+	}()
+
+	for response := range stream {
+		if response.Error != nil {
+			// Return the original error without wrapping to preserve its type
+			return "", response.Error
+		}
+		if response.Content != "" {
+			responseContent.WriteString(response.Content)
+		}
+		if response.FinishReason != "" {
+			break
+		}
+	}
+
+	if responseContent.Len() == 0 {
+		return "", fmt.Errorf("received empty response from model %s", model)
+	}
+
+	return responseContent.String(), nil
 }

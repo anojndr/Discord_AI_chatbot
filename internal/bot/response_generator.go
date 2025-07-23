@@ -192,12 +192,13 @@ processStream:
 	for response := range stream {
 		if response.Error != nil {
 			log.Printf("Stream error: %v", response.Error)
-			
-			// If we haven't received any content yet and haven't tried fallback, attempt it
-			if !firstContentReceived && !fallbackAttempted {
-				log.Printf("Stream error before receiving content, attempting fallback")
+
+			// If the error suggests a fallback, and we haven't tried yet, attempt it.
+			// This now also catches PrematureStreamFinishError.
+			if b.llmClient.ShouldFallback(response.Error) && !fallbackAttempted {
+				log.Printf("Fallback-triggering stream error, attempting fallback")
 				fallbackAttempted = true
-				
+
 				// Try fallback model
 				fallbackModel := b.config.Load().FallbackModel
 				fallbackStream, fallbackErr := attemptStream(fallbackModel, true)

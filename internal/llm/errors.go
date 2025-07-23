@@ -6,6 +6,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"DiscordAIChatbot/internal/llm/providers"
 )
 
 // isAPIKeyError checks if the error is related to API key authentication/authorization
@@ -83,6 +85,45 @@ func (c *LLMClient) isInternalError(err error) bool {
 		strings.Contains(errStr, "an internal error has occurred") ||
 		strings.Contains(errStr, "internal error") ||
 		(strings.Contains(errStr, "500") && strings.Contains(errStr, "internal"))
+}
+
+// ShouldFallback checks if the given error warrants a fallback to another model
+func (c *LLMClient) ShouldFallback(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for our custom premature stream finish error from the providers package
+	if _, ok := err.(*providers.PrematureStreamFinishError); ok {
+		return true
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// List of error substrings that should trigger a fallback
+	// Based on Gemini and OpenAI documentation for server-side/transient issues
+	fallbackErrorPatterns := []string{
+		// Gemini Errors
+		"resource_exhausted", // 429
+		"internal",           // 500
+		"unavailable",        // 503
+
+		// OpenAI Errors
+		"rate limit",             // 429
+		"server had an error",    // 500
+		"engine is currently overloaded", // 503
+		"apiconnectionerror",     // Python library error
+		"apitimeouterror",        // Python library error
+		"internalservererror",    // Python library error
+	}
+
+	for _, pattern := range fallbackErrorPatterns {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // retryWith503Backoff performs exponential backoff retry for 503 errors

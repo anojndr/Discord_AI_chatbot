@@ -632,24 +632,24 @@ func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model 
 	// Try original model first
 	stream, err := c.StreamChatCompletion(ctx, model, messages)
 	if err != nil {
-		// If there's no fallback model, return the error immediately
-		if fallbackModel == "" {
+		// If the error does not warrant a fallback, or if no fallback is configured, return the error.
+		if !c.ShouldFallback(err) || fallbackModel == "" {
 			return nil, fallbackResult, err
 		}
 
-		logging.LogToFile("Original model %s failed, attempting fallback to %s: %v", model, fallbackModel, err)
-		
+		logging.LogToFile("Original model %s failed with a fallback-triggering error, attempting fallback to %s: %v", model, fallbackModel, err)
+
 		// Store the original error
 		fallbackResult.OriginalError = err
 		fallbackResult.FallbackModel = fallbackModel
-		
+
 		// Try fallback model
 		fallbackStream, fallbackErr := c.StreamChatCompletion(ctx, fallbackModel, messages)
 		if fallbackErr != nil {
 			logging.LogToFile("Fallback model %s also failed: %v", fallbackModel, fallbackErr)
 			return nil, fallbackResult, fmt.Errorf("both original model (%s) and fallback model (%s) failed. Original error: %w, Fallback error: %v", model, fallbackModel, err, fallbackErr)
 		}
-		
+
 		fallbackResult.UsedFallback = true
 		logging.LogToFile("Successfully switched to fallback model %s", fallbackModel)
 		return fallbackStream, fallbackResult, nil
@@ -670,24 +670,24 @@ func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages 
 	// Try original model first
 	response, err := c.GetChatCompletion(ctx, messages, model)
 	if err != nil {
-		// If there's no fallback model, return the error immediately
-		if fallbackModel == "" {
+		// If the error does not warrant a fallback, or if no fallback is configured, return the error.
+		if !c.ShouldFallback(err) || fallbackModel == "" {
 			return "", fallbackResult, err
 		}
 
-		logging.LogToFile("Original model %s failed, attempting fallback to %s: %v", model, fallbackModel, err)
-		
+		logging.LogToFile("Original model %s failed with a fallback-triggering error, attempting fallback to %s: %v", model, fallbackModel, err)
+
 		// Store the original error
 		fallbackResult.OriginalError = err
 		fallbackResult.FallbackModel = fallbackModel
-		
+
 		// Try fallback model
 		fallbackResponse, fallbackErr := c.GetChatCompletion(ctx, messages, fallbackModel)
 		if fallbackErr != nil {
 			logging.LogToFile("Fallback model %s also failed: %v", fallbackModel, fallbackErr)
 			return "", fallbackResult, fmt.Errorf("both original model (%s) and fallback model (%s) failed. Original error: %w, Fallback error: %v", model, fallbackModel, err, fallbackErr)
 		}
-		
+
 		fallbackResult.UsedFallback = true
 		logging.LogToFile("Successfully switched to fallback model %s", fallbackModel)
 		return fallbackResponse, fallbackResult, nil
