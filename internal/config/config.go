@@ -24,6 +24,7 @@ type Config struct {
 
 	// Default model for new users
 	DefaultModel string `yaml:"default_model"`
+	FallbackModel string `yaml:"fallback_model,omitempty"`
 
 	// Message limits
 	MaxImages   int `yaml:"max_images"`

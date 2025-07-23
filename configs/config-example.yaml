@@ -17,6 +17,9 @@ status_message: "Serving LLMs on Discord"
 # Default model for new users
 default_model: gemini/gemini-2.5-flash
 
+# Fallback model to use when the primary model fails
+fallback_model: "mistral/mistral-medium-2505"
+
 # Generative models
 image_generation_model: "gemini/imagen-4.0-ultra-generate-preview-06-06"
 video_generation_model: "gemini/veo-3.0-generate-preview"

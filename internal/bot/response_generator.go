@@ -198,7 +198,7 @@ processStream:
 				fallbackAttempted = true
 				
 				// Try fallback model
-				fallbackModel := "pollinations/o3"
+				fallbackModel := b.config.Load().FallbackModel
 				fallbackStream, fallbackErr := attemptStream(fallbackModel, true)
 				if fallbackErr != nil {
 					log.Printf("Fallback model also failed: %v", fallbackErr)
@@ -706,7 +706,7 @@ processStream:
 		fallbackAttempted = true
 		
 		// Try fallback model
-		fallbackModel := "pollinations/o3"
+		fallbackModel := b.config.Load().FallbackModel
 		fallbackStream, fallbackErr := attemptStream(fallbackModel, true)
 		if fallbackErr != nil {
 			log.Printf("Fallback model also failed: %v", fallbackErr)
