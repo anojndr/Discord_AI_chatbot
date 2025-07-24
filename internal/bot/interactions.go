@@ -15,18 +15,16 @@ import (
 func (b *Bot) handleButtonInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.MessageComponentData()
 
-	// Handle download response button
-	if strings.HasPrefix(data.CustomID, "download_response_") {
+	switch {
+	case strings.HasPrefix(data.CustomID, "download_response_"):
 		b.handleDownloadResponse(s, i)
-		return
-	}
-
-	// Handle view output better button
-	if strings.HasPrefix(data.CustomID, "view_output_better_") {
+	case strings.HasPrefix(data.CustomID, "view_output_better_"):
 		b.handleViewOutputBetter(s, i)
-		return
+	case strings.HasPrefix(data.CustomID, "retry_with_web_search_"):
+		b.handleRetry(s, i, true)
+	case strings.HasPrefix(data.CustomID, "retry_without_web_search_"):
+		b.handleRetry(s, i, false)
 	}
-
 }
 
 // handleDownloadResponse handles the download response button click
@@ -236,4 +234,81 @@ func (b *Bot) getFullResponseContent(s *discordgo.Session, channelID, messageID 
 	}
 
 	return strings.Join(contentParts, "\n\n"), nil
+}
+
+// handleRetry handles the retry button clicks
+func (b *Bot) handleRetry(s *discordgo.Session, i *discordgo.InteractionCreate, withWebSearch bool) {
+	customID := i.MessageComponentData().CustomID
+	parts := strings.Split(customID, "_")
+	if len(parts) < 4 {
+		log.Printf("Invalid retry button CustomID: %s", customID)
+		return
+	}
+	originalBotResponseID := parts[len(parts)-1]
+
+	// 1. Acknowledge the interaction immediately
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags: discordgo.MessageFlagsEphemeral,
+		},
+	})
+	if err != nil {
+		log.Printf("Failed to send deferred response for retry: %v", err)
+		return
+	}
+
+	// 2. Find the original user message that triggered the bot's response
+	node, exists := b.nodeManager.Get(originalBotResponseID)
+	if !exists || node.ParentMsg == nil {
+		log.Printf("Could not find original message for bot response ID: %s", originalBotResponseID)
+		errorContent := "❌ Could not find the original message to retry."
+		_, _ = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &errorContent,
+		})
+		return
+	}
+	originalUserMessage := node.ParentMsg
+
+	// 3. Create a new, synthetic message object to re-process
+	syntheticMsg := &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			ID:              fmt.Sprintf("%d", time.Now().UnixNano()), // Unique ID for this retry
+			ChannelID:       originalUserMessage.ChannelID,
+			GuildID:         originalUserMessage.GuildID,
+			Content:         originalUserMessage.Content,
+			Author:          originalUserMessage.Author,
+			Attachments:     originalUserMessage.Attachments,
+			Embeds:          originalUserMessage.Embeds,
+			Mentions:        originalUserMessage.Mentions,
+			MentionRoles:    originalUserMessage.MentionRoles,
+			MentionEveryone: originalUserMessage.MentionEveryone,
+			Timestamp:       time.Now(),
+			// Set the reference to the original user message to maintain conversation context
+			MessageReference: originalUserMessage.Reference(),
+		},
+	}
+
+	// 4. Modify content based on web search choice
+	if !withWebSearch {
+		// Prepend a directive to skip the web search decider LLM call
+		syntheticMsg.Content = "SKIP_WEB_SEARCH_DECIDER\n\n" + originalUserMessage.Content
+	}
+
+	// 5. Submit the synthetic message to the processing queue
+	select {
+	case b.messageJobs <- syntheticMsg:
+		// Job successfully submitted
+		successContent := "✅ Your request has been resubmitted for processing."
+		_, _ = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &successContent,
+		})
+	default:
+		// Pool is busy
+		errorContent := "❌ The message processing pool is currently full. Please try again in a moment."
+		_, _ = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &errorContent,
+		})
+		log.Printf("Message processing pool is full. Dropping retry request from user %s", i.Member.User.ID)
+	}
 }

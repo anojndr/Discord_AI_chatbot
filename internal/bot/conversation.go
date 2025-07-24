@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -14,7 +15,7 @@ import (
 
 
 // buildConversationChainWithWebSearch builds the conversation chain from message history with optional web search analysis
-func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *discordgo.MessageCreate, acceptImages, acceptUsernames, enableWebSearch bool, progressMgr *utils.ProgressManager) ([]messaging.OpenAIMessage, []string) {
+func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *discordgo.MessageCreate, acceptImages, acceptUsernames, enableWebSearch, forceDisableWebSearch bool, progressMgr *utils.ProgressManager) ([]messaging.OpenAIMessage, []string) {
 	// Add cycle detection to prevent infinite loops
 	processedMessages := make(map[string]bool)
 	var messages []messaging.OpenAIMessage
@@ -75,7 +76,7 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 			// Enable web search for:
 			// 1. Current message if enableWebSearch is true
 			// 2. Historical messages that originally had web search enabled
-			processForWebSearch := (isCurrentMessage && enableWebSearch) || webSearchPerformed
+			processForWebSearch := !forceDisableWebSearch && ((isCurrentMessage && enableWebSearch) || webSearchPerformed)
 
 			b.processMessage(s, currentMsg, node, processForWebSearch, progressMgr)
 		}
@@ -99,6 +100,12 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 			}
 
 			text := node.GetText()
+			if forceDisableWebSearch {
+				// Find and remove web search results from the text
+				if idx := strings.Index(text, "\n\nweb search api results:"); idx != -1 {
+					text = text[:idx]
+				}
+			}
 			images := node.GetImages()
 			audioFiles := node.GetAudioFiles()
 

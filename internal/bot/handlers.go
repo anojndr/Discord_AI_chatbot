@@ -398,7 +398,8 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	// Build conversation chain
-	messages, warnings := b.buildConversationChainWithWebSearch(s, m, acceptImages, acceptUsernames, true, progressMgr)
+	forceDisableWebSearch := strings.HasPrefix(m.Content, "SKIP_WEB_SEARCH_DECIDER\n\n")
+	messages, warnings := b.buildConversationChainWithWebSearch(s, m, acceptImages, acceptUsernames, true, forceDisableWebSearch, progressMgr)
 
 	// Get user's custom system prompt or fall back to default
 	userSystemPrompt := b.userPrefs.GetUserSystemPrompt(context.Background(), m.Author.ID)

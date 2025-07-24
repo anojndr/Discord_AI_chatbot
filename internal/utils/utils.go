@@ -177,7 +177,7 @@ func CreateEmbed(content string, warnings []string, isComplete bool, footerInfo 
 }
 
 // CreateActionButtons returns buttons for download, view output better, and retry options.
-func CreateActionButtons(messageID string) []discordgo.MessageComponent {
+func CreateActionButtons(messageID string, webSearchPerformed bool) []discordgo.MessageComponent {
 	// Include download and view output better buttons
 	buttons := []discordgo.MessageComponent{
 		discordgo.Button{
@@ -192,10 +192,35 @@ func CreateActionButtons(messageID string) []discordgo.MessageComponent {
 		},
 	}
 
-	// Return buttons in one row
+	// Conditionally add retry buttons
+	var retryButtons []discordgo.MessageComponent
+	if webSearchPerformed {
+		retryButtons = append(retryButtons, discordgo.Button{
+			Label:    "Retry without Web Search",
+			Style:    discordgo.SecondaryButton,
+			CustomID: "retry_without_web_search_" + messageID,
+			Emoji: &discordgo.ComponentEmoji{
+				Name: "🔄",
+			},
+		})
+	} else {
+		retryButtons = append(retryButtons, discordgo.Button{
+			Label:    "Retry with Web Search",
+			Style:    discordgo.SecondaryButton,
+			CustomID: "retry_with_web_search_" + messageID,
+			Emoji: &discordgo.ComponentEmoji{
+				Name: "🌐",
+			},
+		})
+	}
+
+	// Return buttons in two rows
 	return []discordgo.MessageComponent{
 		discordgo.ActionsRow{
 			Components: buttons,
+		},
+		discordgo.ActionsRow{
+			Components: retryButtons,
 		},
 	}
 }

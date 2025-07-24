@@ -459,7 +459,7 @@ processStream:
 		lastMsg := responseMessages[len(responseMessages)-1]
 
 		// Add action buttons (download + view output better) to the final message
-		actionButtons := utils.CreateActionButtons(lastMsg.ID)
+		actionButtons := utils.CreateActionButtons(lastMsg.ID, webSearchPerformed)
 
 		if _, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			Channel:    lastMsg.ChannelID,
@@ -480,7 +480,7 @@ processStream:
 			var components []discordgo.MessageComponent
 			if i == len(responseContents)-1 {
 				// This is the last message, add download button
-				components = utils.CreateActionButtons("placeholder")
+				components = utils.CreateActionButtons("placeholder", webSearchPerformed)
 			}
 
 			responseMsg, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
@@ -506,7 +506,7 @@ processStream:
 
 			// Update button with actual message ID if this was the last message
 			if i == len(responseContents)-1 {
-				actionButtonsFinal := utils.CreateActionButtons(responseMsg.ID)
+				actionButtonsFinal := utils.CreateActionButtons(responseMsg.ID, webSearchPerformed)
 				if _, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 					Channel:    responseMsg.ChannelID,
 					ID:         responseMsg.ID,

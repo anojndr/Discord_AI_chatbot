@@ -306,7 +306,7 @@ func (b *Bot) buildChatHistoryForWebSearch(s *discordgo.Session, msg *discordgo.
 	// Use the exact same buildConversationChain function as the main model but with web search disabled
 	// This ensures 100% identical behavior including image handling, etc.
 	// but prevents infinite recursion and duplicate web search analysis
-	messages, _ := b.buildConversationChainWithWebSearch(s, parentMsgCreate, true, false, false, progressMgr)
+	messages, _ := b.buildConversationChainWithWebSearch(s, parentMsgCreate, true, false, false, false, progressMgr)
 	// Note: We ignore warnings since they're not displayed in web search context
 
 	// buildConversationChain returns messages in "newest first" order, but for web search context
