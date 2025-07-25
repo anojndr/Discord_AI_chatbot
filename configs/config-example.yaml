@@ -168,7 +168,7 @@ web_search:
   decider_prompt: |
     ## Task
 
-    Analyze the latest query (and any attached images) to determine if a web search is needed.
+    Analyze the latest query (and any attached images or file content) to determine if a web search is needed.
 
     ---
 
@@ -206,7 +206,10 @@ web_search:
     6.  **Handle Images**
         If an image is attached, identify specific objects, people, places, or text and use those exact identifications in your search queries.
 
-    7.  **Return Proper JSON**
+    7.  **Handle File Content**
+        If file content is provided, use it as the primary context for answering the query. A web search should only be performed if the file content is insufficient or requires external information to be fully understood.
+
+    8.  **Return Proper JSON**
         Use the exact format shown in the examples and output format section.
 
     ---

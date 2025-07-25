@@ -159,7 +159,7 @@ func (w *WebSearchClient) CheckHealth(ctx context.Context) error {
 }
 
 // DecideWebSearch uses the user's preferred model to determine if web search is needed
-func (w *WebSearchClient) DecideWebSearch(ctx context.Context, llmClient *llm.LLMClient, chatHistory []messaging.OpenAIMessage, latestQuery string, userID string, userPrefs interfaces.UserPreferences, systemPrompt string, images []messaging.ImageContent) (*WebSearchDecision, error) {
+func (w *WebSearchClient) DecideWebSearch(ctx context.Context, llmClient *llm.LLMClient, chatHistory []messaging.OpenAIMessage, latestQuery string, fileContent string, userID string, userPrefs interfaces.UserPreferences, systemPrompt string, images []messaging.ImageContent) (*WebSearchDecision, error) {
 	// Check for skip web search directive
 	if strings.HasPrefix(latestQuery, "SKIP_WEB_SEARCH_DECIDER\n\n") {
 		// Remove the directive and return no web search
@@ -202,7 +202,12 @@ func (w *WebSearchClient) DecideWebSearch(ctx context.Context, llmClient *llm.LL
 	}
 
 	// Prepare the final user message with web search decider prompt prepended to latest query
-	promptWithQuery := webSearchDeciderPrompt + "\n\nlatest query: " + latestQuery
+	var promptWithQuery string
+	if fileContent != "" {
+		promptWithQuery = webSearchDeciderPrompt + "\n\nPlease answer the latest query based on the file content.\n\nLatest query:\n" + latestQuery + "\n\nFile content:\n" + fileContent
+	} else {
+		promptWithQuery = webSearchDeciderPrompt + "\n\nlatest query: " + latestQuery
+	}
 
 	// Prepare user message content with images if provided
 	var userContent interface{}
