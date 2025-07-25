@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -261,8 +262,35 @@ func (b *Bot) handleRetry(s *discordgo.Session, i *discordgo.InteractionCreate, 
 	// 2. Find the original user message that triggered the bot's response
 	node, exists := b.nodeManager.Get(originalBotResponseID)
 	if !exists || node.ParentMsg == nil {
-		log.Printf("Could not find original message for bot response ID: %s", originalBotResponseID)
-		errorContent := "❌ Could not find the original message to retry."
+		// Node not in memory or is incomplete, try fetching from persistent cache
+		if b.messageCache != nil {
+			dbNode, err := b.messageCache.GetNode(context.Background(), originalBotResponseID)
+			if err != nil {
+				log.Printf("Error fetching node from DB for retry: %v", err)
+				// Do not expose DB errors to user
+			}
+			if dbNode != nil {
+				// Node found in DB, but ParentMsg is not stored. We need to fetch it.
+				if i.Message.MessageReference != nil && i.Message.MessageReference.MessageID != "" {
+					parentMsg, err := s.ChannelMessage(i.ChannelID, i.Message.MessageReference.MessageID)
+					if err != nil {
+						log.Printf("Could not fetch original user message (%s) for retry: %v", i.Message.MessageReference.MessageID, err)
+					} else {
+						dbNode.ParentMsg = parentMsg
+						node = dbNode
+						exists = true
+						// Put the now-complete node back into the in-memory manager
+						b.nodeManager.Set(originalBotResponseID, node)
+					}
+				}
+			}
+		}
+	}
+
+	// Final check after attempting to recover from cache
+	if !exists || node.ParentMsg == nil {
+		log.Printf("Could not find or reconstruct original message for bot response ID: %s", originalBotResponseID)
+		errorContent := "❌ Could not find the original message to retry. It might be too old."
 		_, _ = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: &errorContent,
 		})
