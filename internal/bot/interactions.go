@@ -293,6 +293,9 @@ func (b *Bot) handleRetry(s *discordgo.Session, i *discordgo.InteractionCreate, 
 	if !withWebSearch {
 		// Prepend a directive to skip the web search decider LLM call
 		syntheticMsg.Content = "SKIP_WEB_SEARCH_DECIDER\n\n" + originalUserMessage.Content
+	} else {
+		// Append a directive to force web search
+		syntheticMsg.Content = originalUserMessage.Content + "\n\nSEARCH THE NET"
 	}
 
 	// 5. Submit the synthetic message to the processing queue
