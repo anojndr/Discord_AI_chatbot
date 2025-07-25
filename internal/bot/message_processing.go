@@ -158,8 +158,14 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 		eg.Go(func() error {
 			// Combine preliminary content for the decision model
 			mu.Lock()
-			tempContentParts := []string{cleanedContent, utils.ExtractEmbedText(msg.Embeds), attachmentText, extractedURLContent}
+			tempContentParts := []string{cleanedContent, utils.ExtractEmbedText(msg.Embeds), extractedURLContent}
 			tempFullContent := strings.Join(tempContentParts, "\n\n")
+
+			// Create safe copies of shared data under the lock to prevent data races.
+			// This is crucial because the web search decision is a long-running network call.
+			safeImages := make([]messaging.ImageContent, len(images))
+			copy(safeImages, images)
+			safeAttachmentText := attachmentText
 			mu.Unlock()
 
 			userModel := b.userPrefs.GetUserModel(gctx, msg.Author.ID, "")
@@ -184,7 +190,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			decisionCtx, cancel := context.WithTimeout(gctx, 45*time.Second)
 			defer cancel()
 
-			decision, err := b.webSearchClient.DecideWebSearch(decisionCtx, b.llmClient, chatHistory, contentForWebSearchDecision, msg.Author.ID, b.userPrefs, systemPrompt, images)
+			decision, err := b.webSearchClient.DecideWebSearch(decisionCtx, b.llmClient, chatHistory, contentForWebSearchDecision, safeAttachmentText, msg.Author.ID, b.userPrefs, systemPrompt, safeImages)
 			if err != nil {
 				log.Printf("Web search decision failed: %v", err)
 				return nil // Don't fail the group for a decision error
