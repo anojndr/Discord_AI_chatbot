@@ -59,6 +59,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	var lensContent, channelContent, attachmentText, extractedURLContent, webSearchResults string
 	var images []messaging.ImageContent
 	var audioFiles []messaging.AudioContent
+	var pdfFiles []messaging.PDFContent
 	var hasBadAttachments bool
 	var urlExtractionErr, webSearchErr error
 	webSearchRequired := false
@@ -97,11 +98,12 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 	// Task 3: Process Current Message Attachments
 	eg.Go(func() error {
-		currentImages, currentAudio, currentText, currentBad, currentShouldProcessURLs, err := processors.ProcessAttachments(gctx, msg.Attachments, b.fileProcessor)
+		currentImages, currentAudio, currentPDFs, currentText, currentBad, currentShouldProcessURLs, err := processors.ProcessAttachments(gctx, msg.Attachments, b.fileProcessor)
 		mu.Lock()
 		defer mu.Unlock()
 		images = append(images, currentImages...)
 		audioFiles = append(audioFiles, currentAudio...)
+		pdfFiles = append(pdfFiles, currentPDFs...)
 		if attachmentText != "" && currentText != "" {
 			attachmentText = attachmentText + "\n\n" + "**📎 Current Attachments:**\n" + currentText
 		} else if currentText != "" {
@@ -120,11 +122,12 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	if isCurrentMessage && parentMsg != nil && len(parentMsg.Attachments) > 0 && !isDirectReply {
 		eg.Go(func() error {
 			log.Printf("Processing %d attachments from parent message for non-reply context", len(parentMsg.Attachments))
-			parentImages, parentAudio, parentText, parentBad, parentShouldProcessURLs, err := processors.ProcessAttachments(gctx, parentMsg.Attachments, b.fileProcessor)
+			parentImages, parentAudio, parentPDFs, parentText, parentBad, parentShouldProcessURLs, err := processors.ProcessAttachments(gctx, parentMsg.Attachments, b.fileProcessor)
 			mu.Lock()
 			defer mu.Unlock()
 			images = append(parentImages, images...)
 			audioFiles = append(parentAudio, audioFiles...)
+			pdfFiles = append(parentPDFs, pdfFiles...)
 			if parentText != "" {
 				attachmentText = "**📎 Referenced Files (from previous message):**\n" + parentText + "\n\n" + attachmentText
 			}
@@ -265,6 +268,7 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	node.SetText(fullContent)
 	node.SetImages(images)
 	node.SetAudioFiles(audioFiles)
+	node.SetPDFFiles(pdfFiles)
 	node.SetWebSearchInfo(webSearchRequired, webSearchResultCount)
 	node.HasBadAttachments = hasBadAttachments
 	if msg.Author.ID == s.State.User.ID {

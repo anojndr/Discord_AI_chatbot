@@ -90,7 +90,7 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 		}
 
 		// Build OpenAI message
-		if node.GetText() != "" || len(node.GetImages()) > 0 || len(node.GetAudioFiles()) > 0 {
+		if node.GetText() != "" || len(node.GetImages()) > 0 || len(node.GetAudioFiles()) > 0 || len(node.GetPDFFiles()) > 0 {
 			openaiMsg := messaging.OpenAIMessage{
 				Role: node.Role,
 			}
@@ -108,6 +108,7 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 			}
 			images := node.GetImages()
 			audioFiles := node.GetAudioFiles()
+			pdfFiles := node.GetPDFFiles()
 
 			// Apply image limits and collect warnings
 			if len(images) > maxImages {
@@ -132,7 +133,7 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 			}
 
 			// Set content
-			if (acceptImages && len(images) > 0) || len(audioFiles) > 0 {
+			if (acceptImages && len(images) > 0) || len(audioFiles) > 0 || len(pdfFiles) > 0 {
 				var content []messaging.MessageContent
 				if text != "" {
 					content = append(content, messaging.MessageContent{
@@ -151,6 +152,13 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 					content = append(content, messaging.MessageContent{
 						Type:      "audio_file",
 						AudioFile: &audio,
+					})
+				}
+				for _, pdf := range pdfFiles {
+					pdf := pdf // Capture loop variable
+					content = append(content, messaging.MessageContent{
+						Type:    "pdf_file",
+						PDFFile: &pdf,
 					})
 				}
 				openaiMsg.Content = content

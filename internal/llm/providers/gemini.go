@@ -158,6 +158,14 @@ func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages [
 					}
 					parts = append(parts, &genai.Part{InlineData: blob})
 					log.Printf("Successfully processed audio file: %d bytes, %s", len(part.AudioFile.Data), part.AudioFile.MIMEType)
+				} else if part.Type == "pdf_file" && part.PDFFile != nil {
+					// Handle PDF files with inline data
+					blob := &genai.Blob{
+						MIMEType: part.PDFFile.MIMEType,
+						Data:     part.PDFFile.Data,
+					}
+					parts = append(parts, &genai.Part{InlineData: blob})
+					log.Printf("Successfully processed PDF file: %d bytes, %s", len(part.PDFFile.Data), part.PDFFile.MIMEType)
 				}
 			}
 		default:
@@ -230,6 +238,8 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 					logging.LogExternalContentToFile("  Part %d [Image]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
 				} else if strings.HasPrefix(part.InlineData.MIMEType, "audio/") {
 					logging.LogExternalContentToFile("  Part %d [Audio]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
+				} else if part.InlineData.MIMEType == "application/pdf" {
+					logging.LogExternalContentToFile("  Part %d [PDF]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
 				} else {
 					logging.LogExternalContentToFile("  Part %d [Data]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
 				}

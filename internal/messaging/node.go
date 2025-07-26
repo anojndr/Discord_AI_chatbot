@@ -13,6 +13,7 @@ type MsgNode struct {
 	Images          []ImageContent          `json:"images"`
 	GeneratedImages []GeneratedImageContent `json:"generated_images"`
 	AudioFiles      []AudioContent          `json:"audio_files"`
+	PDFFiles        []PDFContent            `json:"pdf_files"`
 
 	Role   string `json:"role"` // "user" or "assistant"
 	UserID string `json:"user_id"`
@@ -54,6 +55,14 @@ type AudioContent struct {
 	Data     []byte `json:"data,omitempty"`
 }
 
+// PDFContent represents a PDF file attachment
+type PDFContent struct {
+	Type     string `json:"type"`
+	MIMEType string `json:"mime_type"`
+	URL      string `json:"url"`
+	Data     []byte `json:"data,omitempty"`
+}
+
 // ProcessedNode is a container for a message ID and its corresponding MsgNode, used for batch saving.
 type ProcessedNode struct {
 	MessageID string
@@ -67,6 +76,7 @@ type MessageContent struct {
 	ImageURL       *ImageURL              `json:"image_url,omitempty"`
 	GeneratedImage *GeneratedImageContent `json:"generated_image,omitempty"`
 	AudioFile      *AudioContent          `json:"audio_file,omitempty"`
+	PDFFile        *PDFContent            `json:"pdf_file,omitempty"`
 }
 
 // OpenAIMessage represents a message in OpenAI format
@@ -83,6 +93,7 @@ func NewMsgNode() *MsgNode {
 		Images:          make([]ImageContent, 0),
 		GeneratedImages: make([]GeneratedImageContent, 0),
 		AudioFiles:      make([]AudioContent, 0),
+		PDFFiles:        make([]PDFContent, 0),
 	}
 }
 
@@ -161,6 +172,27 @@ func (m *MsgNode) AddAudioFile(audioFile AudioContent) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.AudioFiles = append(m.AudioFiles, audioFile)
+}
+
+// GetPDFFiles safely gets the PDF files
+func (m *MsgNode) GetPDFFiles() []PDFContent {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]PDFContent(nil), m.PDFFiles...)
+}
+
+// SetPDFFiles safely sets the PDF files
+func (m *MsgNode) SetPDFFiles(pdfFiles []PDFContent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.PDFFiles = pdfFiles
+}
+
+// AddPDFFile safely adds a PDF file
+func (m *MsgNode) AddPDFFile(pdfFile PDFContent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.PDFFiles = append(m.PDFFiles, pdfFile)
 }
 
 // GetWebSearchInfo safely gets web search information
