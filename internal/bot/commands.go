@@ -542,16 +542,16 @@ func (b *Bot) handleGenerateVideoCommand(s *discordgo.Session, i *discordgo.Inte
 
 	prompt := data.Options[0].StringValue()
 
-	// Acknowledge the interaction immediately
-	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-	}); err != nil {
-		log.Printf("Failed to send deferred response: %v", err)
-		// Optionally, try to send an error message back to the user
-		errorContent := "❌ An error occurred while processing your request."
-		_, _ = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &errorContent,
+	// Acknowledge the interaction immediately with retry logic
+	err := retryWithBackoff(context.Background(), func() error {
+		return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		})
+	}, is503Error, 3, 2*time.Second)
+
+	if err != nil {
+		log.Printf("Failed to send deferred response after multiple retries: %v", err)
+		// We can't edit the response if the initial acknowledgement failed, so we just log it.
 		return
 	}
 
@@ -642,15 +642,16 @@ func (b *Bot) handleGenerateImageCommand(s *discordgo.Session, i *discordgo.Inte
 
 	prompt := data.Options[0].StringValue()
 
-	// Acknowledge the interaction immediately
-	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-	}); err != nil {
-		log.Printf("Failed to send deferred response: %v", err)
-		errorContent := "❌ An error occurred while processing your request."
-		_, _ = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &errorContent,
+	// Acknowledge the interaction immediately with retry logic
+	err := retryWithBackoff(context.Background(), func() error {
+		return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		})
+	}, is503Error, 3, 2*time.Second)
+
+	if err != nil {
+		log.Printf("Failed to send deferred response after multiple retries: %v", err)
+		// We can't edit the response if the initial acknowledgement failed, so we just log it.
 		return
 	}
 
@@ -713,4 +714,37 @@ func (b *Bot) handleGenerateImageCommand(s *discordgo.Session, i *discordgo.Inte
 			log.Printf("Failed to edit interaction response with image: %v", err)
 		}
 	}()
+}
+// is503Error checks if an error is an HTTP 503 Service Unavailable error.
+func is503Error(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "HTTP 503 Service Unavailable")
+}
+
+// retryWithBackoff attempts an operation multiple times with exponential backoff.
+func retryWithBackoff(ctx context.Context, operation func() error, isRetryable func(error) bool, maxRetries int, initialDelay time.Duration) error {
+	var err error
+	delay := initialDelay
+
+	for i := 0; i < maxRetries; i++ {
+		err = operation()
+		if err == nil {
+			return nil
+		}
+
+		if isRetryable(err) {
+			log.Printf("Retrying operation after %v due to error: %v", delay, err)
+			select {
+			case <-time.After(delay):
+				delay *= 2
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		} else {
+			return err
+		}
+	}
+	return fmt.Errorf("operation failed after %d retries: %w", maxRetries, err)
 }
