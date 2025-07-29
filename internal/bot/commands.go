@@ -715,6 +715,7 @@ func (b *Bot) handleGenerateImageCommand(s *discordgo.Session, i *discordgo.Inte
 		}
 	}()
 }
+
 // is503Error checks if an error is an HTTP 503 Service Unavailable error.
 func is503Error(err error) bool {
 	if err == nil {

@@ -80,7 +80,7 @@ func (cs *ContextSummarizer) SummarizePairs(ctx context.Context, pairs []Convers
 
 	// Use the configured summarization model
 	summarizationModel := cs.config.GetContextSummarizationModel()
-	
+
 	log.Printf("Summarizing %d conversation pairs (%d tokens) using model %s", len(pairs), originalTokens, summarizationModel)
 
 	// Get summary from LLM with fallback
@@ -89,7 +89,7 @@ func (cs *ContextSummarizer) SummarizePairs(ctx context.Context, pairs []Convers
 	if err != nil {
 		return nil, fmt.Errorf("failed to get summarization from LLM (original and fallback models failed): %w", err)
 	}
-	
+
 	// Log if fallback was used
 	if fallbackResult.UsedFallback {
 		log.Printf("Context summarization: Using fallback model %s (original model %s failed)", fallbackResult.FallbackModel, summarizationModel)
@@ -128,22 +128,22 @@ func (cs *ContextSummarizer) buildConversationText(pairs []ConversationPair) str
 		builder.Reset()
 		builderPool.Put(builder)
 	}()
-	
+
 	for i, pair := range pairs {
 		if i > 0 {
 			builder.WriteString("\n\n")
 		}
-		
+
 		// Add user message
 		builder.WriteString("User: ")
 		builder.WriteString(cs.extractTextContent(pair.UserMessage))
 		builder.WriteString("\n\n")
-		
+
 		// Add assistant message
 		builder.WriteString("Assistant: ")
 		builder.WriteString(cs.extractTextContent(pair.AssistantMessage))
 	}
-	
+
 	return builder.String()
 }
 
@@ -189,14 +189,14 @@ Please provide a clear, concise summary that captures the essential points of th
 func (cs *ContextSummarizer) IdentifyConversationPairs(messages []messaging.OpenAIMessage) []ConversationPair {
 	var pairs []ConversationPair
 	var currentUserMsg *messaging.OpenAIMessage
-	
+
 	for _, msg := range messages {
 		switch msg.Role {
 		case "user":
 			// If we had a previous user message without an assistant response, skip it
 			// Store the current user message
 			currentUserMsg = &msg
-			
+
 		case "assistant":
 			// If we have a user message, create a pair
 			if currentUserMsg != nil {
@@ -207,62 +207,62 @@ func (cs *ContextSummarizer) IdentifyConversationPairs(messages []messaging.Open
 				// Calculate token count for this pair
 				pairMessages := []messaging.OpenAIMessage{*currentUserMsg, msg}
 				pair.OriginalTokens = utils.EstimateTokenCount(pairMessages)
-				
+
 				pairs = append(pairs, pair)
 				currentUserMsg = nil // Reset
 			}
-			
+
 		case "system":
 			// System messages don't participate in user-assistant pairs
 			// but we don't want to break the pairing logic
 			continue
 		}
 	}
-	
+
 	return pairs
 }
 
 // TruncateQuery truncates a user query to fit within the remaining token budget
 func (cs *ContextSummarizer) TruncateQuery(query string, maxTokens int) string {
 	queryTokens := utils.EstimateTokenCountFromText(query)
-	
+
 	if queryTokens <= maxTokens {
 		return query // No truncation needed
 	}
-	
+
 	log.Printf("Truncating query from %d tokens to fit %d token limit", queryTokens, maxTokens)
-	
+
 	// Calculate the ratio of tokens to characters (rough estimate)
 	chars := len(query)
 	if chars == 0 {
 		return query
 	}
-	
+
 	tokensPerChar := float64(queryTokens) / float64(chars)
 	targetChars := int(float64(maxTokens) / tokensPerChar)
-	
+
 	// Leave some buffer for the truncation notice
 	truncationNotice := "... (truncated)"
 	bufferChars := len(truncationNotice) + 10
-	
+
 	if targetChars <= bufferChars {
 		// Query is too short to truncate meaningfully
 		return truncationNotice
 	}
-	
+
 	targetChars -= bufferChars
-	
+
 	// Truncate at word boundary if possible
 	if targetChars < chars {
 		truncated := query[:targetChars]
-		
+
 		// Try to truncate at the last space to avoid cutting words
 		if lastSpace := strings.LastIndex(truncated, " "); lastSpace > targetChars/2 {
 			truncated = truncated[:lastSpace]
 		}
-		
+
 		return truncated + truncationNotice
 	}
-	
+
 	return query
 }

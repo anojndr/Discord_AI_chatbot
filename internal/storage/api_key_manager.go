@@ -16,7 +16,7 @@ import (
 type APIKeyManager struct {
 	db               *sql.DB
 	mu               sync.RWMutex
-	keyRotationIndex map[string]int            // provider -> current key index
+	keyRotationIndex map[string]int               // provider -> current key index
 	badKeyCache      *lru.Cache[string, []string] // provider -> []badKeys
 }
 
@@ -174,7 +174,6 @@ func (akm *APIKeyManager) ResetBadKeys(ctx context.Context, provider string) err
 	log.Printf("Reset bad API keys for provider: %s", provider)
 	return nil
 }
-
 
 // GetBadKeyStats returns statistics about bad keys for monitoring
 func (akm *APIKeyManager) GetBadKeyStats(ctx context.Context) (map[string]int, error) {

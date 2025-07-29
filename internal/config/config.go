@@ -23,7 +23,7 @@ type Config struct {
 	WorkerCount int `yaml:"worker_count"`
 
 	// Default model for new users
-	DefaultModel string `yaml:"default_model"`
+	DefaultModel  string `yaml:"default_model"`
 	FallbackModel string `yaml:"fallback_model,omitempty"`
 
 	// Message limits
@@ -88,7 +88,6 @@ type Config struct {
 	Models       map[string]ModelParams `yaml:"models"`
 	SystemPrompt string                 `yaml:"system_prompt"`
 
-
 	// Channel query settings
 	Channel struct {
 		// Token threshold ratio (0.0-1.0) for channel message fetching
@@ -113,7 +112,6 @@ type Config struct {
 		// Default: 0 (can summarize all pairs)
 		MinUnsummarizedPairs int `yaml:"min_unsummarized_pairs"`
 	} `yaml:"context_summarization"`
-
 
 	// Table rendering settings
 	TableRendering struct {
@@ -234,20 +232,20 @@ func (c *Config) GetContextSummarizationMinUnsummarizedPairs() int {
 func (c *Config) GetModelTokenLimit(modelName string) int {
 	// Default token limit
 	const DefaultTokenLimit = 128000
-	
+
 	if c.Models == nil {
 		return DefaultTokenLimit
 	}
-	
+
 	modelParams, exists := c.Models[modelName]
 	if !exists {
 		return DefaultTokenLimit
 	}
-	
+
 	if modelParams.TokenLimit != nil && *modelParams.TokenLimit > 0 {
 		return *modelParams.TokenLimit
 	}
-	
+
 	return DefaultTokenLimit
 }
 
@@ -342,7 +340,6 @@ func parseConfig(data []byte) (*Config, error) {
 		config.Logging.LogLevel = DefaultLogLevel
 	}
 
-
 	// Set table rendering defaults
 	if config.TableRendering.Method == "" {
 		config.TableRendering.Method = DefaultTableRenderingMethod
@@ -371,7 +368,6 @@ func parseConfig(data []byte) (*Config, error) {
 		config.ContextSummarization.MinUnsummarizedPairs = DefaultContextSummarizationMinUnsummarizedPairs
 	}
 
-
 	return &config, nil
 }
 
@@ -396,5 +392,3 @@ func (c *Config) GetDefaultModel() string {
 	// Fallback to the first available model from config
 	return c.GetFirstModel()
 }
-
-

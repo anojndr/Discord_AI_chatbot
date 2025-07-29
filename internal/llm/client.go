@@ -2,8 +2,8 @@ package llm
 
 import (
 	"context"
-	json "github.com/json-iterator/go"
 	"fmt"
+	json "github.com/json-iterator/go"
 	"io"
 	"log"
 	"net/http"
@@ -14,12 +14,12 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/hashicorp/golang-lru/v2"
-	"google.golang.org/genai"
 	openai "github.com/sashabaranov/go-openai"
+	"google.golang.org/genai"
 
 	"DiscordAIChatbot/internal/config"
-	"DiscordAIChatbot/internal/logging"
 	"DiscordAIChatbot/internal/llm/providers"
+	"DiscordAIChatbot/internal/logging"
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/storage"
 )
@@ -72,7 +72,6 @@ func (c *LLMClient) isGeminiModel(model string) bool {
 	}
 	return parts[0] == "gemini"
 }
-
 
 // StreamResponse represents a streaming response chunk
 type StreamResponse struct {
@@ -434,11 +433,11 @@ func (c *LLMClient) GetChatCompletion(ctx context.Context, messages []messaging.
 		if chunk.Error != nil {
 			return "", fmt.Errorf("stream error: %w", chunk.Error)
 		}
-		
+
 		if chunk.Content != "" {
 			fullResponse.WriteString(chunk.Content)
 		}
-		
+
 		// Check for completion
 		if chunk.FinishReason != "" {
 			break
@@ -615,9 +614,9 @@ func (c *LLMClient) AddSystemPrompt(messages []messaging.OpenAIMessage, systemPr
 
 // FallbackResult contains the result of a fallback operation
 type FallbackResult struct {
-	UsedFallback    bool
-	FallbackModel   string
-	OriginalError   error
+	UsedFallback  bool
+	FallbackModel string
+	OriginalError error
 }
 
 // StreamChatCompletionWithFallback streams chat completion with an optional fallback model.
@@ -654,7 +653,7 @@ func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model 
 		logging.LogToFile("Successfully switched to fallback model %s", fallbackModel)
 		return fallbackStream, fallbackResult, nil
 	}
-	
+
 	return stream, fallbackResult, nil
 }
 
@@ -692,7 +691,7 @@ func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages 
 		logging.LogToFile("Successfully switched to fallback model %s", fallbackModel)
 		return fallbackResponse, fallbackResult, nil
 	}
-	
+
 	return response, fallbackResult, nil
 }
 

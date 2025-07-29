@@ -210,7 +210,6 @@ func (m *MsgNode) SetWebSearchInfo(performed bool, resultCount int) {
 	m.SearchResultCount = resultCount
 }
 
-
 // MsgNodeManager manages message nodes with caching
 type MsgNodeManager struct {
 	cache *lru.Cache[string, *MsgNode] // Use the LRU cache

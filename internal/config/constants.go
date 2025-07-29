@@ -16,10 +16,10 @@ const (
 	MaxStatusMessageLength = 128
 
 	// Web search defaults (aligned with RAG-Forge API documentation)
-	DefaultWebSearchBaseURL    = "http://localhost:8086"
-	DefaultWebSearchMaxResults = 10
-	DefaultWebSearchMaxChars   = 50000 // Increased to prevent truncation of comments/replies
-	DefaultWebSearchModel           = "gemini/gemini-2.5-flash"
+	DefaultWebSearchBaseURL           = "http://localhost:8086"
+	DefaultWebSearchMaxResults        = 10
+	DefaultWebSearchMaxChars          = 50000 // Increased to prevent truncation of comments/replies
+	DefaultWebSearchModel             = "gemini/gemini-2.5-flash"
 	DefaultWebSearchMaxURLsPerExtract = 20
 
 	// Bot message handling
@@ -50,14 +50,14 @@ const (
 	DefaultLogLevel = "INFO"
 
 	// Table rendering defaults
-	DefaultTableRenderingMethod   = "gg"  // Use gg graphics by default
-	DefaultRodTimeout             = 10    // seconds
-	DefaultRodQuality             = 90    // PNG quality (0-100)
+	DefaultTableRenderingMethod = "gg" // Use gg graphics by default
+	DefaultRodTimeout           = 10   // seconds
+	DefaultRodQuality           = 90   // PNG quality (0-100)
 
 	// Context summarization defaults
-	DefaultContextSummarizationEnabled           = true
-	DefaultContextSummarizationTriggerThreshold  = 0.8                     // 80% of token limit
-	DefaultContextSummarizationModel             = "gemini/gemini-2.5-flash"
-	DefaultContextSummarizationMaxPairsPerBatch  = 1
+	DefaultContextSummarizationEnabled              = true
+	DefaultContextSummarizationTriggerThreshold     = 0.8 // 80% of token limit
+	DefaultContextSummarizationModel                = "gemini/gemini-2.5-flash"
+	DefaultContextSummarizationMaxPairsPerBatch     = 1
 	DefaultContextSummarizationMinUnsummarizedPairs = 0
 )

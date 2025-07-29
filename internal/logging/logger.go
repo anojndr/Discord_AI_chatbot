@@ -67,7 +67,6 @@ var (
 	globalLogger *Logger
 )
 
-
 // InitializeLogging sets up console-only logging with the specified level
 func InitializeLogging(level string) error {
 	// Create console-only logger with minimal flags for quiet output
@@ -81,7 +80,6 @@ func InitializeLogging(level string) error {
 
 	return nil
 }
-
 
 // shouldLog returns true if the message should be logged based on the current log level
 func (l *Logger) shouldLog(level LogLevel) bool {
@@ -208,8 +206,6 @@ func GetLogLevel() LogLevel {
 func GetINFOLevel() LogLevel {
 	return INFO
 }
-
-
 
 // LogToFile is a no-op for backward compatibility (no file logging)
 func LogToFile(format string, args ...interface{}) {

@@ -3,8 +3,8 @@ package context
 import (
 	"bytes"
 	"context"
-	json "github.com/json-iterator/go"
 	"fmt"
+	json "github.com/json-iterator/go"
 	"log"
 
 	"DiscordAIChatbot/internal/config"
@@ -59,8 +59,8 @@ func (cm *ContextManager) ManageContext(ctx context.Context, messages []messagin
 
 	// Calculate current token usage
 	currentTokens := utils.EstimateTokenCount(messages)
-	
-	log.Printf("Context management: %d tokens, limit: %d, trigger at: %d (%.1f%%)", 
+
+	log.Printf("Context management: %d tokens, limit: %d, trigger at: %d (%.1f%%)",
 		currentTokens, tokenLimit, triggerTokenLimit, triggerThreshold*100)
 
 	// If we're under the trigger threshold, no action needed
@@ -78,11 +78,11 @@ func (cm *ContextManager) ManageContext(ctx context.Context, messages []messagin
 
 	// Separate system messages from conversation messages
 	systemMessages, conversationMessages := cm.separateSystemMessages(messages)
-	
+
 	// Calculate tokens used by system messages
 	systemTokens := utils.EstimateTokenCount(systemMessages)
 	availableTokens := triggerTokenLimit - systemTokens
-	
+
 	if availableTokens <= 0 {
 		return nil, fmt.Errorf("system messages alone exceed token budget")
 	}
@@ -97,7 +97,7 @@ func (cm *ContextManager) ManageContext(ctx context.Context, messages []messagin
 	finalMessages := append(systemMessages, managedMessages...)
 	finalTokens := utils.EstimateTokenCount(finalMessages)
 
-	log.Printf("Context management complete: %d → %d tokens (summarized: %v, truncated: %v, summaries: %d)", 
+	log.Printf("Context management complete: %d → %d tokens (summarized: %v, truncated: %v, summaries: %d)",
 		currentTokens, finalTokens, wasSummarized, wasTruncated, summariesCount)
 
 	return &ManageContextResult{
@@ -133,14 +133,14 @@ func (cm *ContextManager) manageConversationMessages(ctx context.Context, messag
 
 	// Identify conversation pairs
 	pairs := cm.summarizer.IdentifyConversationPairs(messages)
-	
+
 	if len(pairs) == 0 {
 		// No pairs to summarize, check if we need to truncate
 		currentTokens := utils.EstimateTokenCount(messages)
 		if currentTokens <= availableTokens {
 			return messages, false, false, 0, nil
 		}
-		
+
 		// Try to truncate if the last message is a user message
 		truncatedMessages, wasTruncated, _, err := cm.handleTruncation(messages, availableTokens)
 		return truncatedMessages, false, wasTruncated, 0, err
@@ -173,10 +173,10 @@ func (cm *ContextManager) manageConversationMessages(ctx context.Context, messag
 func (cm *ContextManager) applySummarization(ctx context.Context, messages []messaging.OpenAIMessage, pairs []ConversationPair, availableTokens int) ([]messaging.OpenAIMessage, int, error) {
 	maxPairsPerBatch := cm.config.GetContextSummarizationMaxPairsPerBatch()
 	minUnsummarizedPairs := cm.config.GetContextSummarizationMinUnsummarizedPairs()
-	
+
 	currentMessages := make([]messaging.OpenAIMessage, len(messages))
 	copy(currentMessages, messages)
-	
+
 	summariesCount := 0
 	currentPairs := pairs
 
@@ -207,9 +207,9 @@ func (cm *ContextManager) applySummarization(ctx context.Context, messages []mes
 
 		// Summarize the oldest pairs
 		pairsForSummary := currentPairs[:pairsToSummarize]
-		
+
 		log.Printf("Summarizing %d conversation pairs to reduce token usage", len(pairsForSummary))
-		
+
 		summaryResult, err := cm.summarizer.SummarizePairs(ctx, pairsForSummary)
 		if err != nil {
 			return nil, summariesCount, fmt.Errorf("failed to summarize conversation pairs: %w", err)
@@ -217,7 +217,7 @@ func (cm *ContextManager) applySummarization(ctx context.Context, messages []mes
 
 		// Replace the summarized pairs with the summary
 		newMessages := []messaging.OpenAIMessage{summaryResult.SummaryMessage}
-		
+
 		// Add remaining unsummarized messages
 		remainingPairs := currentPairs[pairsToSummarize:]
 		for _, pair := range remainingPairs {
@@ -242,17 +242,17 @@ func (cm *ContextManager) applySummarization(ctx context.Context, messages []mes
 func (cm *ContextManager) findNonPairedMessages(allMessages []messaging.OpenAIMessage, pairs []ConversationPair) []messaging.OpenAIMessage {
 	// Create a map of paired messages for quick lookup
 	pairedMessages := make(map[*messaging.OpenAIMessage]bool)
-	
+
 	for _, pair := range pairs {
 		// Note: This is a simplified approach. In a real implementation,
 		// you might want to use message IDs or other unique identifiers
 		for i := range allMessages {
-			if allMessages[i].Role == pair.UserMessage.Role && 
-			   cm.messagesEqual(allMessages[i], pair.UserMessage) {
+			if allMessages[i].Role == pair.UserMessage.Role &&
+				cm.messagesEqual(allMessages[i], pair.UserMessage) {
 				pairedMessages[&allMessages[i]] = true
 			}
-			if allMessages[i].Role == pair.AssistantMessage.Role && 
-			   cm.messagesEqual(allMessages[i], pair.AssistantMessage) {
+			if allMessages[i].Role == pair.AssistantMessage.Role &&
+				cm.messagesEqual(allMessages[i], pair.AssistantMessage) {
 				pairedMessages[&allMessages[i]] = true
 			}
 		}
@@ -331,14 +331,14 @@ func (cm *ContextManager) handleTruncation(messages []messaging.OpenAIMessage, a
 	// Extract content from the last user message
 	lastUserMessage := messages[lastUserMessageIndex]
 	originalContent := cm.summarizer.extractTextContent(lastUserMessage)
-	
+
 	// Truncate the content
 	truncatedContent := cm.summarizer.TruncateQuery(originalContent, availableForLastUser)
-	
+
 	wasTruncated := truncatedContent != originalContent
 
 	if wasTruncated {
-		log.Printf("Truncated last user message: %d → %d tokens", 
+		log.Printf("Truncated last user message: %d → %d tokens",
 			utils.EstimateTokenCountFromText(originalContent),
 			utils.EstimateTokenCountFromText(truncatedContent))
 	}
@@ -355,6 +355,6 @@ func (cm *ContextManager) handleTruncation(messages []messaging.OpenAIMessage, a
 	finalMessages[lastUserMessageIndex] = truncatedMessage
 
 	finalTokens := utils.EstimateTokenCount(finalMessages)
-	
+
 	return finalMessages, wasTruncated, finalTokens, nil
 }

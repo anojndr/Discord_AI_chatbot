@@ -128,4 +128,3 @@ type MessageNodeManager interface {
 	// Size returns the number of nodes
 	Size() int
 }
-

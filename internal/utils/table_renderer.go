@@ -25,16 +25,16 @@ var bufferPool = sync.Pool{
 
 // TableRenderer handles converting markdown tables to images
 type TableRenderer struct {
-	initialized   bool
-	mu            sync.Mutex // protects initialization
-	fontFace      font.Face
-	cellPadding   int
-	borderWidth   int
-	headerHeight  int
-	rowHeight     int
-	minColWidth   int
-	useRod        bool // whether to use Rod for rendering
-	rodConverter  *RodTableConverter
+	initialized  bool
+	mu           sync.Mutex // protects initialization
+	fontFace     font.Face
+	cellPadding  int
+	borderWidth  int
+	headerHeight int
+	rowHeight    int
+	minColWidth  int
+	useRod       bool // whether to use Rod for rendering
+	rodConverter *RodTableConverter
 }
 
 // NewTableRenderer creates a new table renderer instance

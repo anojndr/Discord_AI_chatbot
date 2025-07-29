@@ -172,7 +172,6 @@ func (upm *UserPreferencesManager) ClearUserSystemPrompt(ctx context.Context, us
 	return nil
 }
 
-
 // Close closes the database connection
 func (upm *UserPreferencesManager) Close() error {
 	var err error

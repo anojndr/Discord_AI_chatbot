@@ -262,7 +262,6 @@ func (c *MessageNodeCache) GetNode(ctx context.Context, messageID string) (*mess
 	return node, nil
 }
 
-
 // Close closes the underlying DB connection and waits for the batch worker to finish.
 func (c *MessageNodeCache) Close() error {
 	close(c.nodeQueue)

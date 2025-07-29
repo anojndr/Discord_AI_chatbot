@@ -50,18 +50,18 @@ func EstimateTokenCount(msgs []messaging.OpenAIMessage) int {
 	}
 
 	totalTokens := 0
-	
+
 	// Count tokens for each message
 	for _, msg := range msgs {
 		// Add tokens per message overhead (approximate)
 		totalTokens += 3 // message formatting overhead
-		
+
 		// Add role tokens
 		if msg.Role != "" {
 			roleTokens := tke.Encode(msg.Role, nil, nil)
 			totalTokens += len(roleTokens)
 		}
-		
+
 		// Add content tokens
 		switch c := msg.Content.(type) {
 		case string:
@@ -78,10 +78,10 @@ func EstimateTokenCount(msgs []messaging.OpenAIMessage) int {
 			}
 		}
 	}
-	
+
 	// Add reply priming overhead
 	totalTokens += 3
-	
+
 	return totalTokens
 }
 
@@ -98,4 +98,4 @@ func EstimateTokenCountFromText(text string) int {
 
 	tokens := tke.Encode(text, nil, nil)
 	return len(tokens)
-} 
+}

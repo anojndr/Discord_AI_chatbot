@@ -147,7 +147,7 @@ func (b *Bot) Start() error {
 
 	// Start background health checks and initialization
 	b.activeGoroutines.Add(2)
-	
+
 	// Check web search API health in background (non-blocking)
 	go func() {
 		defer b.activeGoroutines.Done()
@@ -343,7 +343,7 @@ func createTableRenderer(cfg *config.Config) *utils.TableRenderer {
 	if cfg.UseRodTableRendering() {
 		timeout := cfg.GetRodTimeout()
 		quality := cfg.GetRodQuality()
-		log.Printf("Initializing Rod table renderer (method: %s, timeout: %ds, quality: %d)", 
+		log.Printf("Initializing Rod table renderer (method: %s, timeout: %ds, quality: %d)",
 			cfg.TableRendering.Method, timeout, quality)
 		return utils.NewTableRendererWithRodConfig(timeout, quality)
 	} else {

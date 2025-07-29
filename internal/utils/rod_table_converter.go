@@ -286,7 +286,7 @@ func (rtc *RodTableConverter) ProcessResponseWithRod(ctx context.Context, conten
 	// Use the existing table detection logic from TableRenderer
 	tr := NewTableRenderer()
 	tables := tr.DetectTables(content)
-	
+
 	if len(tables) == 0 {
 		return content, nil, nil
 	}

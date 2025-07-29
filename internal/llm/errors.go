@@ -109,12 +109,12 @@ func (c *LLMClient) ShouldFallback(err error) bool {
 		"unavailable",        // 503
 
 		// OpenAI Errors
-		"rate limit",             // 429
-		"server had an error",    // 500
+		"rate limit",                     // 429
+		"server had an error",            // 500
 		"engine is currently overloaded", // 503
-		"apiconnectionerror",     // Python library error
-		"apitimeouterror",        // Python library error
-		"internalservererror",    // Python library error
+		"apiconnectionerror",             // Python library error
+		"apitimeouterror",                // Python library error
+		"internalservererror",            // Python library error
 	}
 
 	for _, pattern := range fallbackErrorPatterns {

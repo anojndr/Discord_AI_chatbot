@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -327,7 +327,6 @@ func (b *Bot) buildChatHistoryForWebSearch(s *discordgo.Session, msg *discordgo.
 
 	return messages
 }
-
 
 // handleVeoGeneration handles the "veo" command to generate a video.
 func (b *Bot) handleVeoGeneration(s *discordgo.Session, msg *discordgo.Message, cleanedContent string) {

@@ -1,8 +1,8 @@
 package utils
 
 import (
-	json "github.com/json-iterator/go"
 	"fmt"
+	json "github.com/json-iterator/go"
 	"io"
 	"net/http"
 	"net/url"
@@ -215,6 +215,7 @@ func IsValidYouTubeURL(input string) bool {
 	extractor := NewYouTubeURLExtractor()
 	return extractor.IsYouTubeURL(input)
 }
+
 // GetPlaylistVideoURLs is a convenience function to extract video URLs from a playlist URL
 func GetPlaylistVideoURLs(playlistURL, apiKey string) ([]string, error) {
 	extractor := NewYouTubeURLExtractor()
@@ -232,7 +233,7 @@ func (y *YouTubeURLExtractor) GetVideoURLsFromPlaylist(playlistID, apiKey string
 
 	for {
 		apiURL := fmt.Sprintf("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=%s&key=%s&pageToken=%s", playlistID, apiKey, nextPageToken)
-		
+
 		resp, err := http.Get(apiURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to make request to YouTube API: %w", err)

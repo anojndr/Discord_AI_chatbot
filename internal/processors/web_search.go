@@ -3,8 +3,8 @@ package processors
 import (
 	"bytes"
 	"context"
-	json "github.com/json-iterator/go"
 	"fmt"
+	json "github.com/json-iterator/go"
 	"log"
 	"net/http"
 	"regexp"
@@ -167,17 +167,17 @@ func (w *WebSearchClient) DecideWebSearch(ctx context.Context, llmClient *llm.LL
 			WebSearchRequired: false,
 		}, nil
 	}
-	
+
 	// Keep the original query including any "SEARCH THE NET" directive
 	// so the Web Search Decider can see the user's explicit intent
 	// Get current year dynamically
 	currentYear := time.Now().Year()
-	
+
 	// Prepare the web search decider system prompt
 	// Replace placeholders with dynamic values
 	prompt := w.config.WebSearch.DeciderPrompt
 	prompt = strings.ReplaceAll(prompt, "{current_year}", fmt.Sprintf("%d", currentYear))
-	
+
 	webSearchDeciderPrompt := prompt
 
 	// Use the configured web search model

@@ -298,7 +298,6 @@ func (clm *ChartLibraryManager) GetLibraryStats(ctx context.Context) (map[string
 	return stats, nil
 }
 
-
 // Close closes the database connection
 func (clm *ChartLibraryManager) Close() error {
 	// Database connection is shared, don't close it here

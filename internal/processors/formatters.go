@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-
 // WebSearchResultFormatter handles formatting of web search results
 type WebSearchResultFormatter struct{}
 

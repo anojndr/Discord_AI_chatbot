@@ -25,14 +25,14 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 	// concurrently, we first keep the result together with its original index
 	// and then sort at the end.
 	type indexedResult struct {
-		idx   int
-		img   messaging.ImageContent
-		audio messaging.AudioContent
-		pdf   messaging.PDFContent
-		text  string
-		isBad bool
+		idx               int
+		img               messaging.ImageContent
+		audio             messaging.AudioContent
+		pdf               messaging.PDFContent
+		text              string
+		isBad             bool
 		shouldProcessURLs bool
-		err   error
+		err               error
 	}
 
 	// Early exit if no attachments

@@ -12,8 +12,6 @@ import (
 	"DiscordAIChatbot/internal/utils"
 )
 
-
-
 // buildConversationChainWithWebSearch builds the conversation chain from message history with optional web search analysis
 func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *discordgo.MessageCreate, acceptImages, acceptUsernames, enableWebSearch, forceDisableWebSearch bool, progressMgr *utils.ProgressManager) ([]messaging.OpenAIMessage, []string) {
 	// Add cycle detection to prevent infinite loops
@@ -30,7 +28,6 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 	if !acceptImages {
 		maxImages = 0
 	}
-
 
 	// Build chain by following parent messages
 	isCurrentMessage := true // The first message is the current one being responded to
@@ -189,7 +186,6 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 		messages[i], messages[j] = messages[j], messages[i]
 	}
 
-
 	// Reverse back to have newest first (as expected by rest of the code)
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
@@ -201,7 +197,6 @@ func (b *Bot) buildConversationChainWithWebSearch(s *discordgo.Session, m *disco
 	}
 
 	// Token usage will be shown in embed footer, no need to add as warning
- 
+
 	return messages, utils.UniqueStrings(warnings)
 }
-

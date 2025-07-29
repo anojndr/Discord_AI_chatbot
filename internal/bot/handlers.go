@@ -275,12 +275,12 @@ func (b *Bot) validateMessageReference(ref *discordgo.MessageReference) bool {
 	if ref == nil || ref.MessageID == "" || ref.ChannelID == "" {
 		return false
 	}
-	
+
 	// Basic format validation - Discord IDs should be numeric and properly sized
 	if len(ref.MessageID) < 10 || len(ref.ChannelID) < 10 {
 		return false
 	}
-	
+
 	// Try to fetch the message to see if it exists using the session from the bot
 	if b.session != nil {
 		_, err := b.session.ChannelMessage(ref.ChannelID, ref.MessageID)
@@ -289,7 +289,7 @@ func (b *Bot) validateMessageReference(ref *discordgo.MessageReference) bool {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -416,17 +416,17 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	ctx := context.Background()
 	cfg = b.config.Load()
 	contextManager := contextmgr.NewContextManager(b.llmClient, cfg)
-	
+
 	managedResult, err := contextManager.ManageContext(ctx, messages, currentModel)
 	if err != nil {
 		log.Printf("Context management failed: %v", err)
 		b.updateProgressWithError(s, progressMgr, fmt.Sprintf("Context management error: %v", err), currentModel)
 		return
 	}
-	
+
 	// Use managed messages
 	messages = managedResult.Messages
-	
+
 	// Add context management information to warnings if needed
 	if managedResult.WasSummarized {
 		warnings = append(warnings, fmt.Sprintf("📝 Summarized %d conversation pairs to fit within token limit", managedResult.SummariesCount))
@@ -434,8 +434,8 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if managedResult.WasTruncated {
 		warnings = append(warnings, "✂️ Latest message truncated to fit within token limit")
 	}
-	
-	log.Printf("Context management: %d tokens used, summarized: %v, truncated: %v", 
+
+	log.Printf("Context management: %d tokens used, summarized: %v, truncated: %v",
 		managedResult.TokensUsed, managedResult.WasSummarized, managedResult.WasTruncated)
 
 	// Reverse messages (newest first for API)

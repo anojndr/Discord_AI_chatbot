@@ -33,26 +33,26 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 	// Initialize tracking variables
 	actualModel := model
 	fallbackAttempted := false
-	
+
 	// Helper function to attempt streaming with potential fallback
 	attemptStream := func(attemptModel string, isFallback bool) (<-chan llm.StreamResponse, error) {
 		if isFallback {
 			log.Printf("Attempting fallback to model: %s", attemptModel)
 		}
-		
+
 		fallbackModel := b.config.Load().FallbackModel
 		stream, fallbackResult, err := b.llmClient.StreamChatCompletionWithFallback(ctx, attemptModel, messages, fallbackModel)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// Update actualModel if fallback was used in the LLM client
 		if fallbackResult != nil && fallbackResult.UsedFallback {
 			actualModel = fallbackResult.FallbackModel
 		} else if isFallback {
 			actualModel = attemptModel
 		}
-		
+
 		return stream, nil
 	}
 
@@ -215,9 +215,9 @@ processStream:
 			// Check if this is a quota exceeded error and provide user-friendly message
 			var errorContent string
 			errorStr := response.Error.Error()
-			if strings.Contains(errorStr, "Error 429") && 
-			   strings.Contains(errorStr, "You exceeded your current quota") &&
-			   strings.Contains(errorStr, "GenerateContentInputTokensPerModelPerMinute-FreeTier") {
+			if strings.Contains(errorStr, "Error 429") &&
+				strings.Contains(errorStr, "You exceeded your current quota") &&
+				strings.Contains(errorStr, "GenerateContentInputTokensPerModelPerMinute-FreeTier") {
 				errorContent = "❌ **Query Too Long**\n\nThis query exceeded the token limit. Please send a shorter version of your message."
 			} else {
 				// Show original error for other types of errors
@@ -706,7 +706,7 @@ processStream:
 	if !firstContentReceived && !fallbackAttempted {
 		log.Printf("No content received from %s, attempting fallback to GPT 4.1", actualModel)
 		fallbackAttempted = true
-		
+
 		// Try fallback model
 		fallbackModel := b.config.Load().FallbackModel
 		fallbackStream, fallbackErr := attemptStream(fallbackModel, true)
@@ -718,12 +718,12 @@ processStream:
 			}
 			return
 		}
-		
+
 		// Replace the stream with fallback stream and restart processing
 		stream = fallbackStream
 		goto processStream
 	}
-	
+
 	// If we still have no content after fallback attempt, clean up
 	if !firstContentReceived && progressMgr != nil && progressMgr.GetMessageID() != "" {
 		log.Printf("No content received even after fallback, cleaning up progress message")
