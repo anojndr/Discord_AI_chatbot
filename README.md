@@ -336,7 +336,7 @@ serpapi:
 
    **Method 2 - With Docker:**
    ```bash
-   docker compose up
+   go run cmd/bot/main.go
    ```
 
 ## Admin Commands

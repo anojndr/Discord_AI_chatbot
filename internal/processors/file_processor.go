@@ -204,7 +204,7 @@ func (fp *FileProcessor) isTextFileByExtension(filename string) bool {
 		".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
 		".sql", ".r", ".m", ".swift", ".rs", ".dart", ".lua",
 		".vim", ".emacs", ".el", ".tex", ".bib", ".csv", ".tsv",
-		".dockerfile", ".makefile", ".cmake", ".gitignore",
+		".makefile", ".cmake", ".gitignore",
 		".editorconfig", ".clang-format", ".prettierrc",
 	}
 
@@ -218,7 +218,7 @@ func (fp *FileProcessor) isTextFileByExtension(filename string) bool {
 	baseName := strings.ToLower(filename)
 	specialNames := []string{
 		"readme", "license", "changelog", "todo", "makefile",
-		"dockerfile", "jenkinsfile", "vagrantfile", "gemfile",
+		"jenkinsfile", "vagrantfile", "gemfile",
 		"rakefile", "gulpfile", "gruntfile", "webpack",
 	}
 
