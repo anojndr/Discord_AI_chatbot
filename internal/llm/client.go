@@ -75,11 +75,12 @@ func (c *LLMClient) isGeminiModel(model string) bool {
 
 // StreamResponse represents a streaming response chunk
 type StreamResponse struct {
-	Content       string
-	FinishReason  string
-	Error         error
-	ImageData     []byte
-	ImageMIMEType string
+	Content           string
+	FinishReason      string
+	Error             error
+	ImageData         []byte
+	ImageMIMEType     string
+	GroundingMetadata *genai.GroundingMetadata
 }
 
 // createGeminiStream creates a streaming chat completion using Gemini
@@ -95,11 +96,12 @@ func (c *LLMClient) createGeminiStream(ctx context.Context, model string, messag
 		defer close(responseChan)
 		for resp := range stream {
 			responseChan <- StreamResponse{
-				Content:       resp.Content,
-				FinishReason:  resp.FinishReason,
-				Error:         resp.Error,
-				ImageData:     resp.ImageData,
-				ImageMIMEType: resp.ImageMIMEType,
+				Content:           resp.Content,
+				FinishReason:      resp.FinishReason,
+				Error:             resp.Error,
+				ImageData:         resp.ImageData,
+				ImageMIMEType:     resp.ImageMIMEType,
+				GroundingMetadata: resp.GroundingMetadata,
 			}
 		}
 	}()

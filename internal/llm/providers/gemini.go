@@ -34,11 +34,12 @@ func NewGeminiProvider(cfg *config.Config, apiKeyManager *storage.APIKeyManager)
 
 // StreamResponse represents a streaming response chunk
 type StreamResponse struct {
-	Content       string
-	FinishReason  string
-	Error         error
-	ImageData     []byte
-	ImageMIMEType string
+	Content          string
+	FinishReason     string
+	Error            error
+	ImageData        []byte
+	ImageMIMEType    string
+	GroundingMetadata *genai.GroundingMetadata
 }
 
 // ExtractSystemMessages extracts system messages from the messages array and returns them as a single string
@@ -337,6 +338,15 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 				}
 			}
 
+			// Apply Gemini Grounding with Google Search if enabled
+			if g.config.WebSearch.GeminiGrounding {
+				config.Tools = []*genai.Tool{
+					{
+						GoogleSearch: &genai.GoogleSearch{},
+					},
+				}
+			}
+	
 			// Check if this is an image generation model
 			isImageGenModel := modelName == "gemini-2.0-flash-preview-image-generation" || strings.HasPrefix(modelName, "imagen")
 			if isImageGenModel {
@@ -417,6 +427,13 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 									ImageMIMEType: part.InlineData.MIMEType,
 								}
 							}
+						}
+					}
+
+					if candidate.GroundingMetadata != nil {
+						logging.LogExternalContentToFile("Gemini Grounding Metadata: %+v", candidate.GroundingMetadata)
+						responseChan <- StreamResponse{
+							GroundingMetadata: candidate.GroundingMetadata,
 						}
 					}
 

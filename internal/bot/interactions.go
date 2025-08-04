@@ -25,6 +25,10 @@ func (b *Bot) handleButtonInteraction(s *discordgo.Session, i *discordgo.Interac
 		b.handleRetry(s, i, true)
 	case strings.HasPrefix(data.CustomID, "retry_without_web_search_"):
 		b.handleRetry(s, i, false)
+	case strings.HasPrefix(data.CustomID, "show_sources_"):
+		b.handleShowSources(s, i)
+	case strings.HasPrefix(data.CustomID, "paginate_sources_"):
+		b.handlePaginateSources(s, i)
 	}
 }
 
@@ -144,6 +148,235 @@ func (b *Bot) handleViewOutputBetter(s *discordgo.Session, i *discordgo.Interact
 		},
 	}); err != nil {
 		log.Printf("Failed to respond to interaction: %v", err)
+	}
+}
+
+// handleShowSources handles the "Show Sources" button click
+func (b *Bot) handleShowSources(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	customID := i.MessageComponentData().CustomID
+	messageID := strings.TrimPrefix(customID, "show_sources_")
+
+	node, exists := b.nodeManager.Get(messageID)
+	if !exists || node.GetGroundingMetadata() == nil {
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Could not retrieve grounding sources for this message.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Failed to respond to interaction: %v", err)
+		}
+		return
+	}
+
+	metadata := node.GetGroundingMetadata()
+	var sourcesEmbed *discordgo.MessageEmbed
+	if len(metadata.WebSearchQueries) > 0 || len(metadata.GroundingChunks) > 0 {
+		sourcesEmbed = &discordgo.MessageEmbed{
+			Title: "📚 Grounding Sources",
+			Color: 0x4A90E2, // A nice blue color
+		}
+
+		if len(metadata.WebSearchQueries) > 0 {
+			sourcesEmbed.Fields = append(sourcesEmbed.Fields, &discordgo.MessageEmbedField{
+				Name:  "🔍 Search Queries",
+				Value: "```\n" + strings.Join(metadata.WebSearchQueries, "\n") + "\n```",
+			})
+		}
+
+		if len(metadata.GroundingChunks) > 0 {
+			urls := make([]string, len(metadata.GroundingChunks))
+			for i, chunk := range metadata.GroundingChunks {
+				urls[i] = fmt.Sprintf("%d. [%s](%s)", i+1, chunk.Web.Title, chunk.Web.URI)
+			}
+			b.sendPaginatedSources(s, i, messageID, urls, metadata.WebSearchQueries, 0)
+			return // The work is done by the paginated sender
+		}
+	}
+
+	// This part is reached only if there are no sources to show
+	sourcesEmbed = &discordgo.MessageEmbed{
+		Title:       "📚 Grounding Sources",
+		Description: "No grounding sources were used for this response.",
+		Color:       0x9B9B9B, // Grey color
+	}
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Embeds: []*discordgo.MessageEmbed{sourcesEmbed},
+			Flags:  discordgo.MessageFlagsEphemeral,
+		},
+	}); err != nil {
+		log.Printf("Failed to respond to interaction: %v", err)
+	}
+}
+
+func (b *Bot) handlePaginateSources(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	parts := strings.Split(i.MessageComponentData().CustomID, "_")
+	if len(parts) != 4 {
+		return
+	}
+	messageID := parts[2]
+	page := 0
+	fmt.Sscanf(parts[3], "%d", &page)
+
+	pages, ok := b.paginationCache.Get(messageID)
+	if !ok {
+		// Respond with an error message if the pagination data has expired
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseUpdateMessage,
+			Data: &discordgo.InteractionResponseData{
+				Content:    "This interaction has expired. Please click 'Show Sources' again.",
+				Embeds:     []*discordgo.MessageEmbed{},
+				Components: []discordgo.MessageComponent{},
+			},
+		}); err != nil {
+			log.Printf("Failed to send pagination expiration message: %v", err)
+		}
+		return
+	}
+
+	// Generate the embed for the new page
+	node, exists := b.nodeManager.Get(messageID)
+	var webSearchQueries []string
+	if exists && node.GetGroundingMetadata() != nil {
+		webSearchQueries = node.GetGroundingMetadata().WebSearchQueries
+	}
+
+	embed := b.createSourcesEmbed(pages[page], webSearchQueries, page, len(pages))
+
+	// Generate the buttons for the new page
+	components := b.createPaginationButtons(messageID, page, len(pages))
+
+	// Update the original message with the new page content
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Embeds:     []*discordgo.MessageEmbed{embed},
+			Components: components,
+		},
+	}); err != nil {
+		log.Printf("Failed to update paginated sources: %v", err)
+	}
+}
+
+func (b *Bot) sendPaginatedSources(s *discordgo.Session, i *discordgo.InteractionCreate, messageID string, urls []string, webSearchQueries []string, page int) {
+	const maxEmbedSize = 4000 // A bit less than the 6000 limit to be safe
+	const maxFieldLength = 1024
+
+	var pages [][]string
+	var currentPage []string
+	var currentPageSize int
+
+	for _, url := range urls {
+		if currentPageSize+len(url) > maxEmbedSize {
+			pages = append(pages, currentPage)
+			currentPage = nil
+			currentPageSize = 0
+		}
+		currentPage = append(currentPage, url)
+		currentPageSize += len(url)
+	}
+	if len(currentPage) > 0 {
+		pages = append(pages, currentPage)
+	}
+
+	b.paginationCache.Set(messageID, pages)
+
+	embed := b.createSourcesEmbed(pages[page], webSearchQueries, page, len(pages))
+	components := b.createPaginationButtons(messageID, page, len(pages))
+
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Embeds:     []*discordgo.MessageEmbed{embed},
+			Flags:      discordgo.MessageFlagsEphemeral,
+			Components: components,
+		},
+	}); err != nil {
+		log.Printf("Failed to send paginated sources: %v", err)
+	}
+}
+
+func (b *Bot) createSourcesEmbed(pageContent []string, webSearchQueries []string, page, pageCount int) *discordgo.MessageEmbed {
+	embed := &discordgo.MessageEmbed{
+		Title: "📚 Grounding Sources",
+		Color: 0x4A90E2,
+	}
+
+	if len(webSearchQueries) > 0 {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "🔍 Search Queries",
+			Value: "```\n" + strings.Join(webSearchQueries, "\n") + "\n```",
+		})
+	}
+
+	var currentField strings.Builder
+	fieldCount := 1
+	const maxFieldLength = 1024
+
+	for _, url := range pageContent {
+		if currentField.Len()+len(url)+1 > maxFieldLength {
+			fieldName := "🌐 URLs"
+			if fieldCount > 1 {
+				fieldName = fmt.Sprintf("🌐 URLs (Cont.)")
+			}
+			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+				Name:  fieldName,
+				Value: currentField.String(),
+			})
+			currentField.Reset()
+			fieldCount++
+		}
+		if currentField.Len() > 0 {
+			currentField.WriteString("\n")
+		}
+		currentField.WriteString(url)
+	}
+
+	if currentField.Len() > 0 {
+		fieldName := "🌐 URLs"
+		if fieldCount > 1 {
+			fieldName = fmt.Sprintf("🌐 URLs (Cont.)")
+		}
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  fieldName,
+			Value: currentField.String(),
+		})
+	}
+
+	if pageCount > 1 {
+		embed.Footer = &discordgo.MessageEmbedFooter{
+			Text: fmt.Sprintf("Page %d of %d", page+1, pageCount),
+		}
+	}
+
+	return embed
+}
+
+func (b *Bot) createPaginationButtons(messageID string, page, pageCount int) []discordgo.MessageComponent {
+	if pageCount <= 1 {
+		return nil
+	}
+
+	return []discordgo.MessageComponent{
+		discordgo.ActionsRow{
+			Components: []discordgo.MessageComponent{
+				discordgo.Button{
+					Label:    "Previous",
+					Style:    discordgo.PrimaryButton,
+					CustomID: fmt.Sprintf("paginate_sources_%s_%d", messageID, page-1),
+					Disabled: page == 0,
+				},
+				discordgo.Button{
+					Label:    "Next",
+					Style:    discordgo.PrimaryButton,
+					CustomID: fmt.Sprintf("paginate_sources_%s_%d", messageID, page+1),
+					Disabled: page == pageCount-1,
+				},
+			},
+		},
 	}
 }
 

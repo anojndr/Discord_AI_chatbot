@@ -172,6 +172,10 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			mu.Unlock()
 
 			userModel := b.userPrefs.GetUserModel(gctx, msg.Author.ID, "")
+			if strings.HasPrefix(userModel, "gemini/") && b.config.Load().WebSearch.GeminiGrounding {
+				log.Printf("Skipping web search decider for Gemini model with native grounding enabled: %s", userModel)
+				return nil
+			}
 			if userModel == "gemini/gemini-2.0-flash-preview-image-generation" {
 				log.Printf("Skipping web search for image generation model: %s", userModel)
 				return nil

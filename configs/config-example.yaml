@@ -165,6 +165,7 @@ web_search:
   max_urls_per_extract: 20 # As per RAG-Forge API docs
   model: gemini/gemini-2.5-flash  # Model for web search decisions
   fallback_model: "mistral/mistral-medium-2505" # Fallback model for web search decisions
+  gemini_grounding: false # Use Google Search grounding for Gemini models
   decider_prompt: |
     ## Task
 

@@ -177,7 +177,7 @@ func CreateEmbed(content string, warnings []string, isComplete bool, footerInfo 
 }
 
 // CreateActionButtons returns buttons for download, view output better, and retry options.
-func CreateActionButtons(messageID string, webSearchPerformed bool) []discordgo.MessageComponent {
+func CreateActionButtons(messageID string, webSearchPerformed bool, hasGroundingMetadata bool) []discordgo.MessageComponent {
 	// Include download and view output better buttons
 	buttons := []discordgo.MessageComponent{
 		discordgo.Button{
@@ -192,9 +192,21 @@ func CreateActionButtons(messageID string, webSearchPerformed bool) []discordgo.
 		},
 	}
 
+	if hasGroundingMetadata {
+		buttons = append(buttons, discordgo.Button{
+			Label:    "Show Sources",
+			Style:    discordgo.SecondaryButton,
+			CustomID: "show_sources_" + messageID,
+			Emoji: &discordgo.ComponentEmoji{
+				Name: "📚",
+			},
+		})
+	}
+	
 	// Conditionally add retry buttons
 	var retryButtons []discordgo.MessageComponent
-	if webSearchPerformed {
+	// If web search was performed OR if Gemini grounding was used, show the "Retry without" button
+	if webSearchPerformed || hasGroundingMetadata {
 		retryButtons = append(retryButtons, discordgo.Button{
 			Label:    "Retry without Web Search",
 			Style:    discordgo.SecondaryButton,
@@ -448,4 +460,16 @@ func PostToTextIs(content string) (string, error) {
 	}
 
 	return finalURL, nil
+}
+
+// TruncateWithEllipsis shortens a string to a maximum length, adding "..." if truncated.
+func TruncateWithEllipsis(s string, maxLength int) string {
+	if len(s) <= maxLength {
+		return s
+	}
+	// Keep space for "..."
+	if maxLength <= 3 {
+		return "..."
+	}
+	return s[:maxLength-3] + "..."
 }

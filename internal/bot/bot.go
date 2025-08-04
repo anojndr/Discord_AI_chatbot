@@ -50,6 +50,7 @@ type Bot struct {
 	shutdownCancel   context.CancelFunc
 	activeGoroutines sync.WaitGroup
 	messageCache     *storage.MessageNodeCache
+	paginationCache  *PaginationCache
 	messageJobs      chan *discordgo.MessageCreate // Add this
 }
 
@@ -90,6 +91,7 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 		shutdownCtx:      shutdownCtx,
 		shutdownCancel:   shutdownCancel,
 		httpClient:       httpClient,
+		paginationCache:  NewPaginationCache(),
 		messageJobs:      make(chan *discordgo.MessageCreate, 100), // Buffered channel
 	}
 	bot.config.Store(cfg)
@@ -310,7 +312,7 @@ func (b *Bot) setupHealthServer() {
 	// Get port from environment variable, default to 8080
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8081"
 	}
 
 	b.healthServer = &http.Server{

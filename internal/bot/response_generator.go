@@ -146,6 +146,7 @@ processStream:
 	var editTask *time.Timer
 	var generatedImages [][]byte // Store generated images
 	var imageMIMETypes []string  // Store MIME types for images
+	var groundingMetadata *messaging.GroundingMetadata
 	lastEditTime := time.Now()
 	firstContentReceived := false
 
@@ -293,8 +294,25 @@ processStream:
 			log.Printf("Received generated image: %d bytes, MIME type: %s", len(response.ImageData), response.ImageMIMEType)
 		}
 
+		if response.GroundingMetadata != nil {
+			groundingMetadata = &messaging.GroundingMetadata{
+				WebSearchQueries: response.GroundingMetadata.WebSearchQueries,
+			}
+			for _, chunk := range response.GroundingMetadata.GroundingChunks {
+				groundingMetadata.GroundingChunks = append(groundingMetadata.GroundingChunks, messaging.GroundingChunk{
+					Web: struct {
+						URI   string `json:"uri"`
+						Title string `json:"title"`
+					}{
+						URI:   chunk.Web.URI,
+						Title: chunk.Web.Title,
+					},
+				})
+			}
+		}
+
 		// Skip empty content chunks
-		if response.Content == "" && response.ImageData == nil {
+		if response.Content == "" && response.ImageData == nil && response.GroundingMetadata == nil {
 			continue
 		}
 
@@ -459,7 +477,7 @@ processStream:
 		lastMsg := responseMessages[len(responseMessages)-1]
 
 		// Add action buttons (download + view output better) to the final message
-		actionButtons := utils.CreateActionButtons(lastMsg.ID, webSearchPerformed)
+		actionButtons := utils.CreateActionButtons(lastMsg.ID, webSearchPerformed, groundingMetadata != nil && len(groundingMetadata.GroundingChunks) > 0)
 
 		if _, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			Channel:    lastMsg.ChannelID,
@@ -480,9 +498,9 @@ processStream:
 			var components []discordgo.MessageComponent
 			if i == len(responseContents)-1 {
 				// This is the last message, add download button
-				components = utils.CreateActionButtons("placeholder", webSearchPerformed)
+				components = utils.CreateActionButtons("placeholder", webSearchPerformed, groundingMetadata != nil && len(groundingMetadata.GroundingChunks) > 0)
 			}
-
+	
 			responseMsg, err := s.ChannelMessageSendComplex(targetChannelID, &discordgo.MessageSend{
 				Content:    content,
 				Reference:  currentRef,
@@ -506,7 +524,7 @@ processStream:
 
 			// Update button with actual message ID if this was the last message
 			if i == len(responseContents)-1 {
-				actionButtonsFinal := utils.CreateActionButtons(responseMsg.ID, webSearchPerformed)
+				actionButtonsFinal := utils.CreateActionButtons(responseMsg.ID, webSearchPerformed, groundingMetadata != nil && len(groundingMetadata.GroundingChunks) > 0)
 				if _, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 					Channel:    responseMsg.ChannelID,
 					ID:         responseMsg.ID,
@@ -667,7 +685,8 @@ processStream:
 	for _, responseMsg := range responseMessages {
 		if node, exists := b.nodeManager.Get(responseMsg.ID); exists {
 			node.SetText(processedContent)
-
+			node.SetGroundingMetadata(groundingMetadata)
+	
 			// Add generated images to the response node for conversation history
 			if len(generatedImages) > 0 {
 				for i, imageData := range generatedImages {

@@ -24,7 +24,8 @@ type MsgNode struct {
 	// Web search information
 	WebSearchPerformed bool `json:"web_search_performed"`
 	SearchResultCount  int  `json:"search_result_count"`
-
+	GroundingMetadata  *GroundingMetadata `json:"grounding_metadata,omitempty"`
+	
 	ParentMsg *discordgo.Message `json:"-"`
 
 	mu sync.RWMutex
@@ -86,6 +87,20 @@ type OpenAIMessage struct {
 	Name    string `json:"name,omitempty"`
 }
 
+// GroundingMetadata stores the metadata for grounding with Google Search
+type GroundingMetadata struct {
+	WebSearchQueries []string        `json:"web_search_queries"`
+	GroundingChunks  []GroundingChunk `json:"grounding_chunks"`
+}
+
+// GroundingChunk represents a single source for grounding
+type GroundingChunk struct {
+	Web struct {
+		URI   string `json:"uri"`
+		Title string `json:"title"`
+	} `json:"web"`
+}
+	
 // NewMsgNode creates a new message node
 func NewMsgNode() *MsgNode {
 	return &MsgNode{
@@ -210,6 +225,20 @@ func (m *MsgNode) SetWebSearchInfo(performed bool, resultCount int) {
 	m.SearchResultCount = resultCount
 }
 
+// GetGroundingMetadata safely gets grounding metadata
+func (m *MsgNode) GetGroundingMetadata() *GroundingMetadata {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.GroundingMetadata
+}
+
+// SetGroundingMetadata safely sets grounding metadata
+func (m *MsgNode) SetGroundingMetadata(metadata *GroundingMetadata) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.GroundingMetadata = metadata
+}
+	
 // MsgNodeManager manages message nodes with caching
 type MsgNodeManager struct {
 	cache *lru.Cache[string, *MsgNode] // Use the LRU cache

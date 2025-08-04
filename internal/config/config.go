@@ -57,6 +57,7 @@ type Config struct {
 		FallbackModel     string `yaml:"fallback_model"`
 		DeciderPrompt     string `yaml:"decider_prompt"`
 		YouTubeAPIKey     string `yaml:"youtube_api_key"`
+		GeminiGrounding   bool   `yaml:"gemini_grounding"`
 	} `yaml:"web_search"`
 
 	// SerpAPI settings
