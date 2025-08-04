@@ -184,7 +184,7 @@ func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages [
 }
 
 // CreateGeminiStream creates a streaming chat completion using Gemini
-func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, messages []messaging.OpenAIMessage, downloadImageFunc func(context.Context, string) ([]byte, string, error), isAPIKeyError func(error) bool, is503Error func(error) bool, retryWith503Backoff func(context.Context, func() error) error, isInternalError func(error) bool, retryWithInternalBackoff func(context.Context, func() error) error) (<-chan StreamResponse, error) {
+func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, messages []messaging.OpenAIMessage, detectedURLs []string, downloadImageFunc func(context.Context, string) ([]byte, string, error), isAPIKeyError func(error) bool, is503Error func(error) bool, retryWith503Backoff func(context.Context, func() error) error, isInternalError func(error) bool, retryWithInternalBackoff func(context.Context, func() error) error) (<-chan StreamResponse, error) {
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid model format: %s (expected gemini/model)", model)
@@ -346,7 +346,16 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 					},
 				}
 			}
-	
+
+			// Enable URL context tool if the model supports it and URLs are detected
+			if g.SupportsURLContext(modelName) && len(detectedURLs) > 0 {
+				if config.Tools == nil {
+					config.Tools = []*genai.Tool{}
+				}
+				config.Tools = append(config.Tools, &genai.Tool{URLContext: &genai.URLContext{}})
+				logging.LogExternalContentToFile("Enabled URL Context Tool for %d URLs", len(detectedURLs))
+			}
+
 			// Check if this is an image generation model
 			isImageGenModel := modelName == "gemini-2.0-flash-preview-image-generation" || strings.HasPrefix(modelName, "imagen")
 			if isImageGenModel {
@@ -655,4 +664,16 @@ func (g *GeminiProvider) GenerateVideo(ctx context.Context, model string, prompt
 	}
 
 	return nil, fmt.Errorf("all API keys failed for provider: %s", providerName)
+}
+
+// SupportsURLContext checks if a given Gemini model supports the URL context tool.
+func (g *GeminiProvider) SupportsURLContext(modelName string) bool {
+	supportedModels := map[string]bool{
+		"gemini-2.5-pro":            true,
+		"gemini-2.5-flash":          true,
+		"gemini-2.5-flash-lite":     true,
+		"gemini-2.0-flash":          true,
+		"gemini-2.0-flash-live-001": true,
+	}
+	return supportedModels[modelName]
 }

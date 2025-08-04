@@ -25,7 +25,8 @@ type MsgNode struct {
 	WebSearchPerformed bool `json:"web_search_performed"`
 	SearchResultCount  int  `json:"search_result_count"`
 	GroundingMetadata  *GroundingMetadata `json:"grounding_metadata,omitempty"`
-	
+	DetectedURLs       []string           `json:"detected_urls,omitempty"`
+
 	ParentMsg *discordgo.Message `json:"-"`
 
 	mu sync.RWMutex
@@ -238,7 +239,21 @@ func (m *MsgNode) SetGroundingMetadata(metadata *GroundingMetadata) {
 	defer m.mu.Unlock()
 	m.GroundingMetadata = metadata
 }
-	
+
+// GetDetectedURLs safely gets the detected URLs
+func (m *MsgNode) GetDetectedURLs() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.DetectedURLs
+}
+
+// SetDetectedURLs safely sets the detected URLs
+func (m *MsgNode) SetDetectedURLs(urls []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.DetectedURLs = urls
+}
+
 // MsgNodeManager manages message nodes with caching
 type MsgNodeManager struct {
 	cache *lru.Cache[string, *MsgNode] // Use the LRU cache

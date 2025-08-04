@@ -41,7 +41,7 @@ func (b *Bot) generateResponse(s *discordgo.Session, originalMsg *discordgo.Mess
 		}
 
 		fallbackModel := b.config.Load().FallbackModel
-		stream, fallbackResult, err := b.llmClient.StreamChatCompletionWithFallback(ctx, attemptModel, messages, fallbackModel)
+		stream, fallbackResult, err := b.llmClient.StreamChatCompletionWithFallback(ctx, attemptModel, messages, nil, fallbackModel)
 		if err != nil {
 			return nil, err
 		}

@@ -65,7 +65,7 @@ func NewLLMClient(cfg *config.Config, apiKeyManager *storage.APIKeyManager, http
 }
 
 // isGeminiModel checks if the given model uses the Gemini provider
-func (c *LLMClient) isGeminiModel(model string) bool {
+func (c *LLMClient) IsGeminiModel(model string) bool {
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) != 2 {
 		return false
@@ -84,8 +84,8 @@ type StreamResponse struct {
 }
 
 // createGeminiStream creates a streaming chat completion using Gemini
-func (c *LLMClient) createGeminiStream(ctx context.Context, model string, messages []messaging.OpenAIMessage) (<-chan StreamResponse, error) {
-	stream, err := c.geminiProvider.CreateGeminiStream(ctx, model, messages, c.downloadImageFromURL, c.isAPIKeyError, c.is503Error, c.retryWith503Backoff, c.isInternalError, c.retryWithInternalBackoff)
+func (c *LLMClient) createGeminiStream(ctx context.Context, model string, messages []messaging.OpenAIMessage, detectedURLs []string) (<-chan StreamResponse, error) {
+	stream, err := c.geminiProvider.CreateGeminiStream(ctx, model, messages, detectedURLs, c.downloadImageFromURL, c.isAPIKeyError, c.is503Error, c.retryWith503Backoff, c.isInternalError, c.retryWithInternalBackoff)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (c *LLMClient) createGeminiStream(ctx context.Context, model string, messag
 
 // GenerateVideo generates a video using the appropriate provider
 func (c *LLMClient) GenerateVideo(ctx context.Context, model string, prompt string) ([]byte, error) {
-	if !c.isGeminiModel(model) {
+	if !c.IsGeminiModel(model) {
 		return nil, fmt.Errorf("video generation is only supported for Gemini models")
 	}
 
@@ -120,7 +120,7 @@ func (c *LLMClient) GenerateVideo(ctx context.Context, model string, prompt stri
 
 // GenerateImage generates an image using the appropriate provider.
 func (c *LLMClient) GenerateImage(ctx context.Context, model string, prompt string) ([]*genai.GeneratedImage, error) {
-	if !c.isGeminiModel(model) {
+	if !c.IsGeminiModel(model) {
 		return nil, fmt.Errorf("image generation is only supported for Gemini models")
 	}
 
@@ -150,7 +150,7 @@ func (c *LLMClient) getOpenAIClient(providerName, baseURL, apiKey string) *opena
 // CreateChatCompletionStream creates a streaming chat completion
 func (c *LLMClient) CreateChatCompletionStream(ctx context.Context, model string, messages []messaging.OpenAIMessage) (*openai.ChatCompletionStream, error) {
 	// Check if this is a Gemini model
-	if c.isGeminiModel(model) {
+	if c.IsGeminiModel(model) {
 		return nil, fmt.Errorf("use StreamChatCompletion method for Gemini models")
 	}
 
@@ -351,10 +351,10 @@ func (c *LLMClient) buildDetailedError(err error, providerName, baseURL string) 
 }
 
 // StreamChatCompletion streams chat completion responses
-func (c *LLMClient) StreamChatCompletion(ctx context.Context, model string, messages []messaging.OpenAIMessage) (<-chan StreamResponse, error) {
+func (c *LLMClient) StreamChatCompletion(ctx context.Context, model string, messages []messaging.OpenAIMessage, detectedURLs []string) (<-chan StreamResponse, error) {
 	// Check if this is a Gemini model
-	if c.isGeminiModel(model) {
-		return c.createGeminiStream(ctx, model, messages)
+	if c.IsGeminiModel(model) {
+		return c.createGeminiStream(ctx, model, messages, detectedURLs)
 	}
 
 	// Handle OpenAI-compatible models
@@ -423,9 +423,9 @@ func (c *LLMClient) StreamChatCompletion(ctx context.Context, model string, mess
 
 // GetChatCompletion gets a complete chat completion response (non-streaming)
 // This is useful for summarization and other tasks that need the full response
-func (c *LLMClient) GetChatCompletion(ctx context.Context, messages []messaging.OpenAIMessage, model string) (string, error) {
+func (c *LLMClient) GetChatCompletion(ctx context.Context, messages []messaging.OpenAIMessage, model string, detectedURLs []string) (string, error) {
 	// Use streaming and collect all chunks
-	stream, err := c.StreamChatCompletion(ctx, model, messages)
+	stream, err := c.StreamChatCompletion(ctx, model, messages, detectedURLs)
 	if err != nil {
 		return "", fmt.Errorf("failed to create stream: %w", err)
 	}
@@ -623,7 +623,7 @@ type FallbackResult struct {
 
 // StreamChatCompletionWithFallback streams chat completion with an optional fallback model.
 // If fallbackModel is an empty string, no fallback will be attempted.
-func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model string, messages []messaging.OpenAIMessage, fallbackModel string) (<-chan StreamResponse, *FallbackResult, error) {
+func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model string, messages []messaging.OpenAIMessage, detectedURLs []string, fallbackModel string) (<-chan StreamResponse, *FallbackResult, error) {
 	fallbackResult := &FallbackResult{
 		UsedFallback:  false,
 		FallbackModel: "",
@@ -631,7 +631,7 @@ func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model 
 	}
 
 	// Try original model first
-	stream, err := c.StreamChatCompletion(ctx, model, messages)
+	stream, err := c.StreamChatCompletion(ctx, model, messages, detectedURLs)
 	if err != nil {
 		// If the error does not warrant a fallback, or if no fallback is configured, return the error.
 		if !c.ShouldFallback(err) || fallbackModel == "" {
@@ -645,7 +645,7 @@ func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model 
 		fallbackResult.FallbackModel = fallbackModel
 
 		// Try fallback model
-		fallbackStream, fallbackErr := c.StreamChatCompletion(ctx, fallbackModel, messages)
+		fallbackStream, fallbackErr := c.StreamChatCompletion(ctx, fallbackModel, messages, detectedURLs)
 		if fallbackErr != nil {
 			logging.LogToFile("Fallback model %s also failed: %v", fallbackModel, fallbackErr)
 			return nil, fallbackResult, fmt.Errorf("both original model (%s) and fallback model (%s) failed. Original error: %w, Fallback error: %v", model, fallbackModel, err, fallbackErr)
@@ -661,7 +661,7 @@ func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model 
 
 // GetChatCompletionWithFallback gets a complete chat completion with an optional fallback model.
 // If fallbackModel is an empty string, no fallback will be attempted.
-func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages []messaging.OpenAIMessage, model string, fallbackModel string) (string, *FallbackResult, error) {
+func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages []messaging.OpenAIMessage, model string, detectedURLs []string, fallbackModel string) (string, *FallbackResult, error) {
 	fallbackResult := &FallbackResult{
 		UsedFallback:  false,
 		FallbackModel: "",
@@ -669,7 +669,7 @@ func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages 
 	}
 
 	// Try original model first
-	response, err := c.GetChatCompletion(ctx, messages, model)
+	response, err := c.GetChatCompletion(ctx, messages, model, detectedURLs)
 	if err != nil {
 		// If the error does not warrant a fallback, or if no fallback is configured, return the error.
 		if !c.ShouldFallback(err) || fallbackModel == "" {
@@ -683,7 +683,7 @@ func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages 
 		fallbackResult.FallbackModel = fallbackModel
 
 		// Try fallback model
-		fallbackResponse, fallbackErr := c.GetChatCompletion(ctx, messages, fallbackModel)
+		fallbackResponse, fallbackErr := c.GetChatCompletion(ctx, messages, fallbackModel, detectedURLs)
 		if fallbackErr != nil {
 			logging.LogToFile("Fallback model %s also failed: %v", fallbackModel, fallbackErr)
 			return "", fallbackResult, fmt.Errorf("both original model (%s) and fallback model (%s) failed. Original error: %w, Fallback error: %v", model, fallbackModel, err, fallbackErr)

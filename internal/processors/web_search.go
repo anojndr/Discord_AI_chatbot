@@ -557,7 +557,7 @@ func isLikelyFilename(s string) bool {
 	return false
 }
 func (w *WebSearchClient) getDecisionFromModel(ctx context.Context, llmClient *llm.LLMClient, model string, messages []messaging.OpenAIMessage) (string, error) {
-	stream, err := llmClient.StreamChatCompletion(ctx, model, messages)
+	stream, err := llmClient.StreamChatCompletion(ctx, model, messages, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to start stream with model %s: %w", model, err)
 	}

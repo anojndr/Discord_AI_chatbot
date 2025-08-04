@@ -18,6 +18,7 @@ import (
 	"DiscordAIChatbot/internal/llm"
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/net"
+	"DiscordAIChatbot/internal/llm/providers"
 	"DiscordAIChatbot/internal/processors"
 	"DiscordAIChatbot/internal/storage"
 	"DiscordAIChatbot/internal/utils"
@@ -36,6 +37,7 @@ type Bot struct {
 	llmClient        *llm.LLMClient
 	webSearchClient  *processors.WebSearchClient
 	googleLensClient *processors.GoogleLensClient
+	geminiProvider   *providers.GeminiProvider
 	userPrefs        *storage.UserPreferencesManager
 	apiKeyManager    *storage.APIKeyManager
 	tableRenderer    *utils.TableRenderer
@@ -81,6 +83,7 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 		llmClient:        llm.NewLLMClient(cfg, apiKeyManager, httpClient),
 		webSearchClient:  processors.NewWebSearchClient(cfg, webSearchHTTPClient),
 		googleLensClient: processors.NewGoogleLensClient(cfg, apiKeyManager, httpClient),
+		geminiProvider:   providers.NewGeminiProvider(cfg, apiKeyManager),
 		userPrefs:        storage.NewUserPreferencesManager(cfg.DatabaseURL),
 		apiKeyManager:    apiKeyManager,
 		tableRenderer:    createTableRenderer(cfg),

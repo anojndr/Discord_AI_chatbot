@@ -85,7 +85,7 @@ func (cs *ContextSummarizer) SummarizePairs(ctx context.Context, pairs []Convers
 
 	// Get summary from LLM with fallback
 	// No specific fallback for summarization, so pass an empty string
-	response, fallbackResult, err := cs.llmClient.GetChatCompletionWithFallback(ctx, summarizationMessages, summarizationModel, "")
+	response, fallbackResult, err := cs.llmClient.GetChatCompletionWithFallback(ctx, summarizationMessages, summarizationModel, nil, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get summarization from LLM (original and fallback models failed): %w", err)
 	}

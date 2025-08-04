@@ -146,11 +146,46 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 		eg.Go(func() error {
 			detectedURLs := processors.DetectURLs(contentForURLExtraction)
 			if len(detectedURLs) > 0 {
-				res, err := b.webSearchClient.ExtractURLs(gctx, detectedURLs)
-				mu.Lock()
-				extractedURLContent = res
-				urlExtractionErr = err
-				mu.Unlock()
+				userModel := b.userPrefs.GetUserModel(gctx, msg.Author.ID, "")
+				modelName := strings.Split(userModel, "/")[1]
+
+				var youtubeURLs, otherURLs []string
+				for _, u := range detectedURLs {
+					if utils.IsValidYouTubeURL(u) {
+						youtubeURLs = append(youtubeURLs, u)
+					} else {
+						otherURLs = append(otherURLs, u)
+					}
+				}
+
+				// Always extract YouTube URLs
+				if len(youtubeURLs) > 0 {
+					res, err := b.webSearchClient.ExtractURLs(gctx, youtubeURLs)
+					mu.Lock()
+					if err != nil {
+						urlExtractionErr = err
+					} else {
+						extractedURLContent += res
+					}
+					mu.Unlock()
+				}
+
+				// Handle other URLs
+				if len(otherURLs) > 0 {
+					if b.llmClient.IsGeminiModel(userModel) && b.geminiProvider.SupportsURLContext(modelName) {
+						log.Printf("Skipping URL extraction for Gemini model with URL context support: %s", userModel)
+						node.SetDetectedURLs(otherURLs)
+					} else {
+						res, err := b.webSearchClient.ExtractURLs(gctx, otherURLs)
+						mu.Lock()
+						if err != nil {
+							urlExtractionErr = err
+						} else {
+							extractedURLContent += res
+						}
+						mu.Unlock()
+					}
+				}
 			}
 			return nil // Don't fail the whole group for a URL error
 		})

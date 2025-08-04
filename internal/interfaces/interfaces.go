@@ -60,7 +60,7 @@ type WebSearchProvider interface {
 	SearchMultiple(ctx context.Context, queries []string) (string, error)
 
 	// ExtractURLs extracts content from specific URLs
-	ExtractURLs(ctx context.Context, urls []string) (string, error)
+	ExtractURLs(ctx context.Context, urls []string, userModel string) (string, error)
 
 	// CheckHealth performs a health check on the web search API
 	CheckHealth(ctx context.Context) error
