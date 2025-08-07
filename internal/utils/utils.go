@@ -203,36 +203,10 @@ func CreateActionButtons(messageID string, webSearchPerformed bool, hasGrounding
 		})
 	}
 	
-	// Conditionally add retry buttons
-	var retryButtons []discordgo.MessageComponent
-	// If web search was performed OR if Gemini grounding was used, show the "Retry without" button
-	if webSearchPerformed || hasGroundingMetadata {
-		retryButtons = append(retryButtons, discordgo.Button{
-			Label:    "Retry without Web Search",
-			Style:    discordgo.SecondaryButton,
-			CustomID: "retry_without_web_search_" + messageID,
-			Emoji: &discordgo.ComponentEmoji{
-				Name: "🔄",
-			},
-		})
-	} else {
-		retryButtons = append(retryButtons, discordgo.Button{
-			Label:    "Retry with Web Search",
-			Style:    discordgo.SecondaryButton,
-			CustomID: "retry_with_web_search_" + messageID,
-			Emoji: &discordgo.ComponentEmoji{
-				Name: "🌐",
-			},
-		})
-	}
-
-	// Return buttons in two rows
+	// Return buttons in a single row
 	return []discordgo.MessageComponent{
 		discordgo.ActionsRow{
 			Components: buttons,
-		},
-		discordgo.ActionsRow{
-			Components: retryButtons,
 		},
 	}
 }
