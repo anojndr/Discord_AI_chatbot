@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -103,6 +104,11 @@ func (upm *UserPreferencesManager) GetUserModel(ctx context.Context, userID, def
 	}
 
 	if preferredModel != "" {
+		// Backward compatibility: older stored Gemini models may have been saved without provider prefix
+		// e.g. "gemini-1.5-flash" instead of "gemini/gemini-1.5-flash".
+		if strings.HasPrefix(preferredModel, "gemini-") && !strings.Contains(preferredModel, "/") {
+			preferredModel = "gemini/" + preferredModel
+		}
 		return preferredModel
 	}
 	return defaultModel

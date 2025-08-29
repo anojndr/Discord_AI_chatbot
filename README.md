@@ -217,7 +217,7 @@ Robust API key rotation and error handling for maximum uptime:
 ---
 
 ### And more:
-- Supports image attachments when using a vision model (like gpt-4.1, claude-3, gemini-2.5-pro, etc.)
+- Supports image attachments when using a vision model (like gpt-4.1, gpt-5, gpt-5-mini, claude-3, gemini-2.5-pro, etc.)
 - **Enhanced text file attachments** (.txt, .c, .go, etc.) with automatic character encoding detection
 - **PDF file attachments** with full text extraction support
 - **Reply-based file access** - When you reply to a message with attachments, the bot automatically processes those files for context

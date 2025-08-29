@@ -177,7 +177,8 @@ func (p *PermissionChecker) checkChannelPermissions(channelIDs []string, isDM bo
 // IsVisionModel checks if a model supports vision
 func IsVisionModel(model string) bool {
 	modelLower := strings.ToLower(model)
-	visionTags := []string{"gpt-4", "o3", "o4", "claude", "gemini", "gemma", "llama", "pixtral", "mistral", "vision", "vl"}
+	// Added gpt-5 to support upcoming OpenAI GPT-5 family (including gpt-5-mini)
+	visionTags := []string{"gpt-4", "gpt-5", "o3", "o4", "claude", "gemini", "gemma", "llama", "pixtral", "mistral", "vision", "vl"}
 
 	for _, tag := range visionTags {
 		if strings.Contains(modelLower, tag) {

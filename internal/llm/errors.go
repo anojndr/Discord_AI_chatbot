@@ -2,10 +2,7 @@ package llm
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"strings"
-	"time"
 
 	"DiscordAIChatbot/internal/llm/providers"
 )
@@ -128,74 +125,19 @@ func (c *LLMClient) ShouldFallback(err error) bool {
 
 // retryWith503Backoff performs exponential backoff retry for 503 errors
 func (c *LLMClient) retryWith503Backoff(ctx context.Context, retryFunc func() error) error {
-	const maxRetries = 3
-	const baseDelay = 1 * time.Second
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		err := retryFunc()
-
-		// If no error or not a 503 error, return immediately
-		if err == nil || !c.is503Error(err) {
-			return err
-		}
-
-		// If this is the last attempt, return the error
-		if attempt == maxRetries-1 {
-			return err
-		}
-
-		// Calculate exponential backoff delay: 1s, 2s, 4s
-		delay := baseDelay * time.Duration(1<<attempt)
-
-		log.Printf("503 error detected (attempt %d/%d), retrying in %v: %v",
-			attempt+1, maxRetries, delay, err)
-
-		// Wait with context cancellation support
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-			// Continue to next attempt
-		}
-	}
-
-	// This should never be reached, but just in case
-	return fmt.Errorf("maximum retries exceeded for 503 errors")
+	// FAST ROTATION MODE:
+	// Previously we performed exponential backoff (1s,2s,4s) on 503 errors before
+	// giving up. To make key rotation faster (user request), we now attempt ONLY ONCE
+	// with ZERO delay. If a 503 occurs the caller can immediately try the next key.
+	// This reduces latency when many keys exist and one is rate limited/overloaded.
+	return retryFunc()
 }
 
 // retryWithInternalBackoff performs exponential backoff retry for INTERNAL errors (500)
 func (c *LLMClient) retryWithInternalBackoff(ctx context.Context, retryFunc func() error) error {
-	const maxRetries = 3
-	const baseDelay = 2 * time.Second // Slightly longer delay for internal errors
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		err := retryFunc()
-
-		// If no error or not an internal error, return immediately
-		if err == nil || !c.isInternalError(err) {
-			return err
-		}
-
-		// If this is the last attempt, return the error
-		if attempt == maxRetries-1 {
-			return err
-		}
-
-		// Calculate exponential backoff delay: 2s, 4s, 8s
-		delay := baseDelay * time.Duration(1<<attempt)
-
-		log.Printf("INTERNAL error detected (attempt %d/%d), retrying in %v: %v",
-			attempt+1, maxRetries, delay, err)
-
-		// Wait with context cancellation support
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-			// Continue to next attempt
-		}
-	}
-
-	// This should never be reached, but just in case
-	return fmt.Errorf("maximum retries exceeded for INTERNAL errors")
+	// FAST ROTATION MODE:
+	// Previously retried INTERNAL (500) errors with exponential backoff (2s,4s,8s).
+	// Now we attempt only once and return immediately so the caller can rotate keys
+	// or fallback without waiting.
+	return retryFunc()
 }

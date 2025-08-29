@@ -146,8 +146,13 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 		eg.Go(func() error {
 			detectedURLs := processors.DetectURLs(contentForURLExtraction)
 			if len(detectedURLs) > 0 {
-				userModel := b.userPrefs.GetUserModel(gctx, msg.Author.ID, "")
-				modelName := strings.Split(userModel, "/")[1]
+				cfg := b.config.Load()
+				userModel := b.userPrefs.GetUserModel(gctx, msg.Author.ID, cfg.GetDefaultModel())
+				// Safely derive model name (part after provider/ if present)
+				modelName := userModel
+				if parts := strings.SplitN(userModel, "/", 2); len(parts) == 2 {
+					modelName = parts[1]
+				}
 
 				var youtubeURLs, otherURLs []string
 				for _, u := range detectedURLs {
@@ -206,9 +211,10 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			safeAttachmentText := attachmentText
 			mu.Unlock()
 
-			userModel := b.userPrefs.GetUserModel(gctx, msg.Author.ID, "")
-			if strings.HasPrefix(userModel, "gemini/") && b.config.Load().WebSearch.GeminiGrounding {
-				log.Printf("Skipping web search decider for Gemini model with native grounding enabled: %s", userModel)
+			cfg := b.config.Load()
+			userModel := b.userPrefs.GetUserModel(gctx, msg.Author.ID, cfg.GetDefaultModel())
+			if (strings.HasPrefix(userModel, "gemini/") || strings.HasPrefix(userModel, "gemini-")) && cfg.WebSearch.GeminiGrounding {
+				log.Printf("Skipping web search decider for Gemini model with native grounding enabled (model=%s grounding=%v)", userModel, cfg.WebSearch.GeminiGrounding)
 				return nil
 			}
 			if userModel == "gemini/gemini-2.0-flash-preview-image-generation" {
@@ -217,7 +223,6 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 			}
 
 			chatHistory := b.buildChatHistoryForWebSearch(s, msg)
-			cfg := b.config.Load()
 			userSystemPrompt := b.userPrefs.GetUserSystemPrompt(gctx, msg.Author.ID)
 			systemPrompt := cfg.SystemPrompt
 			if userSystemPrompt != "" {
