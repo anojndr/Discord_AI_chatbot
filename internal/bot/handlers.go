@@ -153,6 +153,10 @@ func (b *Bot) registerCommands() error {
 				},
 			},
 		},
+		{
+			Name:        "testmodels",
+			Description: "Test all configured models with a simple 'hi' message",
+		},
 	}
 
 	for _, cmd := range commands {

@@ -2,12 +2,16 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
 	"strings"
 	"time"
 
+	"DiscordAIChatbot/internal/llm/providers"
+
+	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/storage"
 	"DiscordAIChatbot/internal/uploader"
 	"github.com/bwmarrin/discordgo"
@@ -30,6 +34,8 @@ func (b *Bot) handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionC
 		b.handleGenerateVideoCommand(s, i)
 	case "generateimage":
 		b.handleGenerateImageCommand(s, i)
+	case "testmodels":
+		b.handleTestModelsCommand(s, i)
 	}
 }
 
@@ -712,6 +718,102 @@ func (b *Bot) handleGenerateImageCommand(s *discordgo.Session, i *discordgo.Inte
 			Files:   files,
 		}); err != nil {
 			log.Printf("Failed to edit interaction response with image: %v", err)
+		}
+	}()
+}
+
+// handleTestModelsCommand handles the /testmodels slash command.
+// It sends a simple "hi" to each configured model and reports success (🟢) or failure (🔴).
+func (b *Bot) handleTestModelsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Respond immediately with a deferred ephemeral response because tests may take time.
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		// No ephemeral flag so results are visible to channel
+		Data: &discordgo.InteractionResponseData{},
+	}); err != nil {
+		log.Printf("Failed to send deferred response: %v", err)
+		return
+	}
+
+	go func() {
+		cfg := b.config.Load()
+		if cfg == nil || len(cfg.Models) == 0 {
+			content := "❌ No models configured."
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content}); err != nil {
+				log.Printf("Failed to edit interaction response: %v", err)
+			}
+			return
+		}
+
+		// Gather and sort model names (ensures we only use models defined in config.yaml)
+		models := make([]string, 0, len(cfg.Models))
+		for name := range cfg.Models { // explicit config-sourced list
+			models = append(models, name)
+		}
+		sort.Strings(models)
+
+		// Helper to format durations compactly
+		formatDur := func(d time.Duration) string {
+			if d < time.Millisecond {
+				return d.String()
+			}
+			if d < time.Second {
+				return fmt.Sprintf("%dms", d.Milliseconds())
+			}
+			// show one decimal up to 10s, then whole seconds
+			if d < 10*time.Second {
+				sec := float64(d) / float64(time.Second)
+				return fmt.Sprintf("%.1fs", sec)
+			}
+			return fmt.Sprintf("%ds", int(d.Seconds()+0.5))
+		}
+
+		results := make([]string, 0, len(models))
+		baseMessages := []messaging.OpenAIMessage{{Role: "user", Content: "hi"}}
+
+		for _, model := range models {
+			start := time.Now()
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			// Disable Gemini grounding for the image generation preview model during testmodels
+			if strings.HasPrefix(model, "gemini/") && strings.HasSuffix(model, "gemini-2.0-flash-preview-image-generation") {
+				ctx = providers.DisableGeminiGroundingInContext(ctx)
+			}
+			_, err := b.llmClient.GetChatCompletion(ctx, baseMessages, model, nil)
+			cancel()
+			elapsed := time.Since(start)
+
+			if err != nil {
+				// Try to extract a short error classification
+				short := "error"
+				errStr := err.Error()
+				if strings.Contains(errStr, "timeout") || errors.Is(err, context.DeadlineExceeded) {
+					short = "timeout"
+				} else if len(errStr) < 40 {
+					short = errStr
+				}
+				results = append(results, fmt.Sprintf("🔴 %s (%s, %s)", model, formatDur(elapsed), short))
+			} else {
+				results = append(results, fmt.Sprintf("🟢 %s (%s)", model, formatDur(elapsed)))
+			}
+		}
+
+		legend := "\n\nLegend: 🟢 success, 🔴 failure | Time = round-trip latency for a simple 'hi' prompt"
+		content := "Model status (config.yaml):\n" + strings.Join(results, "\n") + legend
+		if len(content) > 1900 { // keep some room for Discord limit (2000)
+			// Truncate results but keep legend
+			maxResultsSection := 1800 - len(legend)
+			if maxResultsSection < 0 {
+				maxResultsSection = 0
+			}
+			trimmed := content[:maxResultsSection]
+			// Ensure we don't cut mid-line badly
+			if idx := strings.LastIndex(trimmed, "\n"); idx > 0 {
+				trimmed = trimmed[:idx]
+			}
+			content = trimmed + "\n... (truncated)" + legend
+		}
+		if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content}); err != nil {
+			log.Printf("Failed to edit interaction response with test results: %v", err)
 		}
 	}()
 }

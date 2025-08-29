@@ -24,6 +24,22 @@ type GeminiProvider struct {
 	apiKeyManager *storage.APIKeyManager
 }
 
+// Context key to disable Gemini grounding tools dynamically
+type disableGroundingKey struct{}
+
+// DisableGeminiGroundingInContext returns a context that instructs the Gemini provider
+// to skip adding grounding (Google Search) tools regardless of global config.
+func DisableGeminiGroundingInContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, disableGroundingKey{}, true)
+}
+
+// isGroundingDisabled checks the context for grounding disable flag
+func isGroundingDisabled(ctx context.Context) bool {
+	v := ctx.Value(disableGroundingKey{})
+	disabled, _ := v.(bool)
+	return disabled
+}
+
 // NewGeminiProvider creates a new Gemini provider
 func NewGeminiProvider(cfg *config.Config, apiKeyManager *storage.APIKeyManager) *GeminiProvider {
 	return &GeminiProvider{
@@ -338,12 +354,15 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 				}
 			}
 
-			// Apply Gemini Grounding with Google Search if enabled
-			if g.config.WebSearch.GeminiGrounding {
-				config.Tools = []*genai.Tool{
-					{
-						GoogleSearch: &genai.GoogleSearch{},
-					},
+			// Apply Gemini Grounding with Google Search if enabled (unless disabled by context or excluded model)
+			if g.config.WebSearch.GeminiGrounding && !isGroundingDisabled(ctx) {
+				// Exclude specific models like the image generation preview model
+				if modelName != "gemini-2.0-flash-preview-image-generation" {
+					config.Tools = []*genai.Tool{
+						{GoogleSearch: &genai.GoogleSearch{}},
+					}
+				} else {
+					log.Printf("Skipping Gemini grounding for model %s due to exclusion rules", modelName)
 				}
 			}
 
