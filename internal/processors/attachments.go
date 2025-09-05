@@ -98,13 +98,22 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 				}}
 				return
 			} else if isPDF {
-				// PDF attachment -> store raw data
-				resultsChan <- indexedResult{idx: index, pdf: messaging.PDFContent{
+				// PDF attachment -> store raw data AND extract text so non-Gemini models can use content
+				pdfContent := messaging.PDFContent{
 					Type:     "pdf_file",
 					MIMEType: attachment.ContentType,
 					URL:      attachment.URL,
 					Data:     data,
-				}}
+				}
+
+				// Attempt text extraction (best-effort; failure should not discard the PDF)
+				var extracted string
+				if text, err := fileProcessor.processPDF(data); err == nil {
+					fileHeader := "**📄 PDF File: " + attachment.Filename + "**\n"
+					extracted = fileHeader + text
+				}
+
+				resultsChan <- indexedResult{idx: index, pdf: pdfContent, text: extracted}
 				return
 			}
 

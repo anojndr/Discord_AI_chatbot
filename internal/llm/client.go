@@ -468,6 +468,7 @@ func (c *LLMClient) BuildMessages(nodes []*messaging.MsgNode, maxImages int, acc
 		images := node.GetImages()
 		generatedImages := node.GetGeneratedImages()
 		audioFiles := node.GetAudioFiles()
+		pdfFiles := node.GetPDFFiles()
 
 		// No character-based truncation
 		truncatedText := text
@@ -530,7 +531,7 @@ func (c *LLMClient) BuildMessages(nodes []*messaging.MsgNode, maxImages int, acc
 		}
 
 		// Set content
-		if (acceptImages && (len(limitedImages) > 0 || len(limitedGeneratedImages) > 0)) || len(audioFiles) > 0 {
+		if (acceptImages && (len(limitedImages) > 0 || len(limitedGeneratedImages) > 0)) || len(audioFiles) > 0 || len(pdfFiles) > 0 {
 			// Multi-content format with text, images, and audio
 			var content []messaging.MessageContent
 
@@ -563,6 +564,15 @@ func (c *LLMClient) BuildMessages(nodes []*messaging.MsgNode, maxImages int, acc
 				content = append(content, messaging.MessageContent{
 					Type:      "audio_file",
 					AudioFile: &audio,
+				})
+			}
+
+			// Add PDF files (raw binary) - some OpenAI-compatible providers may ignore unknown types
+			for _, pdf := range pdfFiles {
+				pdf := pdf // capture loop var
+				content = append(content, messaging.MessageContent{
+					Type:    "pdf_file",
+					PDFFile: &pdf,
 				})
 			}
 

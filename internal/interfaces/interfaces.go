@@ -42,7 +42,7 @@ type StreamResponse struct {
 // FileProcessor defines the interface for file processing
 type FileProcessor interface {
 	// ProcessFile processes a file and returns its text content
-	ProcessFile(data []byte, contentType, filename string) (string, error)
+	ProcessFile(data []byte, contentType, filename string) (string, bool, error)
 
 	// GetSupportedFileTypes returns supported file types
 	GetSupportedFileTypes() []string
