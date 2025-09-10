@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -49,11 +50,13 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 		go func(index int, attachment *discordgo.MessageAttachment) {
 			defer wg.Done()
 
-			// Check supported types (extension detection first)
+			// Check supported types (content-type first, then extension fallback)
 			isImage := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "image/")
 			isAudio := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "audio/")
 			isText := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "text/")
-			isPDF := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "application/pdf")
+			isPDFByCT := attachment.ContentType != "" && strings.HasPrefix(attachment.ContentType, "application/pdf")
+			isPDFByExt := strings.EqualFold(filepath.Ext(attachment.Filename), ".pdf")
+			isPDF := isPDFByCT || isPDFByExt
 			isTextByExt := fileProcessor.isTextFileByExtension(attachment.Filename)
 
 			if !isImage && !isAudio && !isText && !isPDF && !isTextByExt {
@@ -98,13 +101,37 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 				}}
 				return
 			} else if isPDF {
-				// PDF attachment -> store raw data
-				resultsChan <- indexedResult{idx: index, pdf: messaging.PDFContent{
-					Type:     "pdf_file",
-					MIMEType: attachment.ContentType,
-					URL:      attachment.URL,
-					Data:     data,
-				}}
+				// PDF attachment -> store raw data AND extract text for non-Gemini models
+				extractedText, shouldProcessURLs, err := fileProcessor.ProcessFile(data, func() string {
+					if attachment.ContentType != "" {
+						return attachment.ContentType
+					}
+					// Fallback content-type when missing but extension indicates PDF
+					return "application/pdf"
+				}(), attachment.Filename)
+
+				var fileTypeInfo string = fmt.Sprintf("**📄 PDF Document: %s**\n", attachment.Filename)
+				result := indexedResult{
+					idx: index,
+					pdf: messaging.PDFContent{
+						Type:     "pdf_file",
+						MIMEType: func() string {
+							if attachment.ContentType != "" {
+								return attachment.ContentType
+							}
+							return "application/pdf"
+						}(),
+						URL:  attachment.URL,
+						Data: data,
+					},
+				}
+
+				if err == nil && strings.TrimSpace(extractedText) != "" {
+					result.text = fileTypeInfo + extractedText
+					result.shouldProcessURLs = shouldProcessURLs
+				}
+
+				resultsChan <- result
 				return
 			}
 
