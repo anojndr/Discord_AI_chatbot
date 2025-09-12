@@ -355,9 +355,12 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 			}
 
 			// Apply Gemini Grounding with Google Search if enabled (unless disabled by context or excluded model)
+			// Requirement: For gemini 2.5 pro we should use the external Web Search (RAG-Forge) pipeline instead of native Gemini grounding.
+			// Therefore we explicitly skip adding GoogleSearch tool when modelName starts with gemini-2.5-pro.
 			if g.config.WebSearch.GeminiGrounding && !isGroundingDisabled(ctx) {
-				// Exclude specific models like the image generation preview model
-				if modelName != "gemini-2.0-flash-preview-image-generation" {
+				if strings.HasPrefix(modelName, "gemini-2.5-pro") {
+					log.Printf("Skipping native Gemini grounding for %s in favor of external Web Search (RAG-Forge)", modelName)
+				} else if modelName != "gemini-2.0-flash-preview-image-generation" { // existing exclusion
 					config.Tools = []*genai.Tool{
 						{GoogleSearch: &genai.GoogleSearch{}},
 					}
