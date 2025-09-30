@@ -84,14 +84,16 @@ Or run local models with:
 
 ---
 
-### Gemini Native Integration & Image Generation
+### Gemini Native Integration & Image/Video Generation
 The bot includes a native provider for Google's Gemini models, enabling access to their unique features without an OpenAI-compatible proxy.
 
 **Features:**
 - **Direct API Access**: Connects directly to the Google AI Generative Language API.
-- **Image Generation**: Supports image generation with models like `gemini-2.0-flash-preview-image-generation`.
-- **Gemini-Specific Parameters**: Configure parameters like `thinking_budget` in your `config.yaml` for fine-tuned control.
-- **Full Multimodality**: Seamlessly handles text and images in both prompts and responses.
+- **Image Generation**: Use `/generateimage` with models like `gemini/imagen-4.0-ultra-generate-preview-06-06`.
+- **Video Generation**: Use `/generatevideo` with models like `gemini/veo-3.0-generate-preview`.
+- **Native Grounding**: Optionally enable Google Search grounding directly within Gemini models for real-time information.
+- **URL Context**: For supported models (like Gemini 2.5 Pro), the bot can natively process web page content by providing URLs directly in the prompt.
+- **Full Multimodality**: Seamlessly handles text, images, audio, and PDFs in both prompts and responses.
 
 ---
 
@@ -103,6 +105,17 @@ To maximize performance and minimize redundant processing, the bot caches proces
 - **Faster Responses**: Subsequent replies in a conversation are faster as the bot doesn't need to re-download and re-process files.
 - **Reduced API Calls**: Minimizes calls to external services for URL extraction and file processing.
 - **Stateful Across Restarts**: The cache is persistent, so the bot remembers processed messages even after being restarted.
+
+---
+
+### Automatic Context Summarization
+Keep conversations going longer without hitting token limits. The bot intelligently manages conversation history as it grows.
+
+**Features:**
+- **Automatic Trigger**: When a conversation approaches the model's token limit, the bot automatically summarizes the oldest parts of the exchange.
+- **Preserves Context**: The summarization process is designed to retain key information, ensuring the conversation remains coherent.
+- **Configurable**: You can enable/disable this feature, set the token threshold for when it triggers, and choose a fast, cost-effective model for the summarization task.
+- **Seamless Operation**: This process happens in the background. Users are notified with a discreet message when summarization occurs.
 
 ---
 
@@ -152,6 +165,9 @@ Every bot response includes helpful action buttons for better interaction:
 **🔗 View Output Better:**
 - Creates a shareable link to text.is with improved formatting for long responses and code.
 
+**📚 Show Sources:**
+- If the response was generated using Gemini's native grounding, this button will display the web sources used.
+
 ---
 
 ### Smart Table Rendering:
@@ -159,7 +175,9 @@ When the bot generates markdown tables, they're automatically converted to image
 
 **Features:**
 - **Automatic Detection**: Detects markdown tables in responses.
-- **Native Go Rendering**: Converts tables to styled PNG images using a native Go graphics library (no external browser dependencies required).
+- **Two Rendering Modes**:
+  - `gg`: A fast, native Go rendering engine with no external dependencies.
+  - `rod`: A higher-quality rendering engine using a headless browser for prettier, dark-mode tables.
 - **Clear Formatting**: Professional styling with proper borders, headers, and alternating row colors.
 - **Separate Attachments**: Table images are sent as separate attachments.
 
@@ -272,12 +290,17 @@ Robust API key rotation and error handling for maximum uptime:
 | **bot_token** | Create a new Discord bot at [discord.com/developers/applications](https://discord.com/developers/applications) and generate a token under the "Bot" tab. Also enable "MESSAGE CONTENT INTENT". |
 | **client_id** | Found under the "OAuth2" tab of the Discord bot you just made. |
 | **status_message** | Set a custom message that displays on the bot's Discord profile. (Max 128 characters) |
+| **worker_count** | Number of concurrent message processing workers. (Default: 2x CPU cores) |
+| **fallback_model** | A reliable model to use if a user's primary model fails. |
+| **image_generation_model** | Model to use for `/generateimage` command. |
+| **video_generation_model** | Model to use for `/generatevideo` command. |
 | **max_images** | The maximum number of image attachments allowed in a single message. (Default: `5`) |
 | **max_messages** | The maximum number of messages allowed in a reply chain. (Default: `25`) |
 | **use_plain_responses** | Set to `true` for plaintext responses instead of embeds. Disables streaming. (Default: `false`) |
 | **allow_dms** | Set to `false` to disable direct message access. (Default: `true`) |
 | **database_url** | **Required**. PostgreSQL connection string. Format: `postgres://user:pass@host:port/db_name` |
 | **logging** | Configure logging levels. |
+| **context_summarization**| Configure automatic summarization for long conversations to avoid hitting token limits. |
 | **web_search** | Configure intelligent web search. **Requires the [RAG-Forge API](https://github.com/anojndr/RAG-Forge) to be running separately.** |
 | **serpapi** | Configure SerpAPI for Google Lens. Supports single or multiple `api_keys`. |
 | **permissions** | Configure access for `users`, `roles`, and `channels`. `admin_ids` gives users special privileges. Leave `allowed_ids` empty to allow all in a category. |
@@ -336,8 +359,18 @@ serpapi:
 
    **Method 2 - With Docker:**
    ```bash
-   go run cmd/bot/main.go
+   docker build -t discord-ai-chatbot .
+   docker run -d --env-file .env --name discord-ai-chatbot discord-ai-chatbot
    ```
+   *Note: Ensure your `config.yaml` is correctly referenced or its values are passed as environment variables.*
+
+## User Commands
+
+-   `/model <model_name>`: Switch your personal LLM.
+-   `/systemprompt [view|set|clear] <prompt>`: Manage your personal system prompt.
+-   `/generateimage <prompt>`: Create an image using the configured image generation model.
+-   `/generatevideo <prompt>`: Create a video using the configured video generation model.
+-   `/testmodels`: Run a quick connectivity and latency test for all configured models.
 
 ## Admin Commands
 
@@ -347,10 +380,13 @@ Administrators (users in `permissions.users.admin_ids`) have access to:
 - `/apikeys status` - View the health status of all configured API keys.
 - `/apikeys reset <provider>` - Reset bad key status for a provider (e.g., `openai`, `gemini`, `serpapi`).
 
+### `/cleardatabase` - Database Management
+- `/cleardatabase` - **DANGEROUS**: Drops and re-initializes all database tables. This will wipe all user preferences, API key statuses, and cached data. (Restricted to specific admin IDs for safety).
+
 ## Notes
 
 - **Charting Feature**: Requires a Python 3.x installation on the host. The bot creates and manages its own isolated Python virtual environment.
-- **Table Rendering**: Handled by a native Go library, no external browser dependencies needed.
+- **Table Rendering**: The `rod` method requires a headless Chrome/Chromium installation. The `gg` method is native Go and has no external dependencies.
 - **User Identity**: Supported by OpenAI and xAI API providers.
 - **Google Lens**: Requires a valid SerpAPI subscription and API key.
 - PRs are welcome :)
@@ -360,8 +396,8 @@ Administrators (users in `permissions.users.admin_ids`) have access to:
 This is a complete Go rewrite of the Python llmcord bot from https://github.com/anojndr/llmcord, providing:
 - **Better Performance**: Native Go compilation for faster execution.
 - **Lower Memory Usage**: Efficient memory management.
-- **Enhanced Concurrency**: Go's goroutines for better handling of multiple conversations.
-- **Native Gemini Support**: Direct integration with Gemini models, including image generation.
+- **Enhanced Concurrency**: Go's goroutines and a worker pool for better handling of multiple conversations.
+- **Native Gemini Support**: Direct integration with Gemini models, including image and video generation.
 - **Persistent Message Caching**: Caches processed message data in PostgreSQL to avoid redundant work.
 - **Advanced API Management**: Multiple API key support with automatic rotation and database tracking.
 - **Smart Table & Chart Rendering**: Converts markdown tables and Python chart code to images.
