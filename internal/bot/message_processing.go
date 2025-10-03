@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/sync/errgroup"
 
@@ -464,13 +465,23 @@ func (b *Bot) handleGoogleLensQuery(ctx context.Context, msg *discordgo.Message,
 		return fmt.Sprintf("user query: %s\n\n⚠️ Google Lens requires an image URL or image attachment.", remainder), nil
 	}
 
+	parsedQuery, parsedOpts, parseWarnings := parseGoogleLensArguments(qParam)
 	log.Printf("Google Lens: Processing image URL: %s", imageURL)
-	log.Printf("Google Lens: Query parameter: %s", qParam)
+	log.Printf("Google Lens: Raw parameters: %s", qParam)
+	if parsedOpts != nil {
+		log.Printf("Google Lens: Parsed options -> type:%s q:%s hl:%s country:%s safe:%s",
+			parsedOpts.Type, parsedOpts.Query, parsedOpts.Language, parsedOpts.Country, parsedOpts.SafeSearch)
+	}
+
+	apiOpts := parsedOpts
+	if isSearchOptionsEmpty(apiOpts) {
+		apiOpts = nil
+	}
 
 	lensCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	lensResults, err := b.googleLensClient.Search(lensCtx, imageURL, &processors.SearchOptions{})
+	lensResults, err := b.googleLensClient.Search(lensCtx, imageURL, apiOpts)
 	if err != nil {
 		log.Printf("Google Lens search failed: %v", err)
 		return fmt.Sprintf("user query: %s\n\n⚠️ Google Lens search failed: %v", remainder, err), nil
@@ -479,7 +490,27 @@ func (b *Bot) handleGoogleLensQuery(ctx context.Context, msg *discordgo.Message,
 		return fmt.Sprintf("user query: %s\n\n⚠️ Google Lens found no visual matches.", remainder), nil
 	}
 
-	return fmt.Sprintf("user query: %s\n\ngoogle lens api results: %s", remainder, lensResults), nil
+	var responseBuilder strings.Builder
+	responseBuilder.WriteString(fmt.Sprintf("user query: %s", remainder))
+
+	if parsedQuery != "" {
+		responseBuilder.WriteString(fmt.Sprintf("\nparsed q: %s", parsedQuery))
+	}
+	if optsSummary := summarizeGoogleLensOptions(parsedOpts); optsSummary != "" {
+		responseBuilder.WriteString(fmt.Sprintf("\noptions: %s", optsSummary))
+	}
+	if len(parseWarnings) > 0 {
+		responseBuilder.WriteString("\nwarnings:")
+		for _, warning := range parseWarnings {
+			responseBuilder.WriteString("\n- ")
+			responseBuilder.WriteString(warning)
+		}
+	}
+
+	responseBuilder.WriteString("\n\ngoogle lens api results: ")
+	responseBuilder.WriteString(lensResults)
+
+	return responseBuilder.String(), nil
 }
 
 // handleAskChannelQuery handles an "askchannel" query.
@@ -518,4 +549,161 @@ func (b *Bot) handleAskChannelQuery(ctx context.Context, s *discordgo.Session, m
 
 	log.Printf("Added %d channel messages to context from %d users", len(channelResult.Messages), len(channelResult.UserMessageCounts))
 	return strings.Join(contextParts, "\n"), nil
+}
+
+func parseGoogleLensArguments(raw string) (string, *processors.SearchOptions, []string) {
+	opts := &processors.SearchOptions{}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", opts, nil
+	}
+
+	tokens := splitArgumentsPreserveQuotes(raw)
+	var queryTokens []string
+	var warnings []string
+	explicitQuery := false
+
+	for _, token := range tokens {
+		key, value, ok := parseKeyValueToken(token)
+		if !ok {
+			queryTokens = append(queryTokens, token)
+			continue
+		}
+
+		switch key {
+		case "type":
+			normalized, valid := processors.NormalizeGoogleLensType(value)
+			if !valid {
+				warnings = append(warnings, fmt.Sprintf("ignored unsupported type %q; valid options: %s", value, strings.Join(processors.GoogleLensAllowedTypeValues(), ", ")))
+				continue
+			}
+			opts.Type = normalized
+		case "hl", "language":
+			opts.Language = value
+		case "country":
+			opts.Country = value
+		case "safe":
+			safeLower := strings.ToLower(value)
+			if safeLower == "active" || safeLower == "off" {
+				opts.SafeSearch = safeLower
+			} else {
+				warnings = append(warnings, fmt.Sprintf("ignored unsupported safe value %q; use \"active\" or \"off\"", value))
+			}
+		case "q":
+			if opts.Query != "" {
+				opts.Query = strings.TrimSpace(opts.Query + " " + value)
+			} else {
+				opts.Query = value
+			}
+			explicitQuery = true
+		default:
+			queryTokens = append(queryTokens, token)
+		}
+	}
+
+	freeText := strings.TrimSpace(strings.Join(queryTokens, " "))
+	if explicitQuery {
+		if freeText != "" {
+			if opts.Query != "" {
+				opts.Query = strings.TrimSpace(opts.Query + " " + freeText)
+			} else {
+				opts.Query = freeText
+			}
+		}
+	} else {
+		opts.Query = freeText
+	}
+
+	return opts.Query, opts, warnings
+}
+
+func summarizeGoogleLensOptions(opts *processors.SearchOptions) string {
+	if opts == nil {
+		return ""
+	}
+
+	var parts []string
+	if opts.Type != "" {
+		parts = append(parts, fmt.Sprintf("type=%s", opts.Type))
+	}
+	if opts.Language != "" {
+		parts = append(parts, fmt.Sprintf("hl=%s", opts.Language))
+	}
+	if opts.Country != "" {
+		parts = append(parts, fmt.Sprintf("country=%s", opts.Country))
+	}
+	if opts.SafeSearch != "" {
+		parts = append(parts, fmt.Sprintf("safe=%s", opts.SafeSearch))
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+func isSearchOptionsEmpty(opts *processors.SearchOptions) bool {
+	if opts == nil {
+		return true
+	}
+	return opts.Query == "" && opts.Type == "" && opts.Language == "" && opts.Country == "" && opts.SafeSearch == ""
+}
+
+func splitArgumentsPreserveQuotes(input string) []string {
+	var args []string
+	var current strings.Builder
+	inQuotes := false
+	var quoteChar rune
+
+	flush := func() {
+		if current.Len() > 0 {
+			args = append(args, current.String())
+			current.Reset()
+		}
+	}
+
+	for _, r := range input {
+		switch {
+		case r == '\'' || r == '"':
+			if inQuotes {
+				if r == quoteChar {
+					inQuotes = false
+					quoteChar = 0
+				} else {
+					current.WriteRune(r)
+				}
+			} else {
+				inQuotes = true
+				quoteChar = r
+			}
+		case unicode.IsSpace(r):
+			if inQuotes {
+				current.WriteRune(r)
+			} else {
+				flush()
+			}
+		default:
+			current.WriteRune(r)
+		}
+	}
+
+	flush()
+	return args
+}
+
+func parseKeyValueToken(token string) (string, string, bool) {
+	if token == "" {
+		return "", "", false
+	}
+
+	for _, sep := range []rune{'=', ':'} {
+		if idx := strings.IndexRune(token, sep); idx != -1 {
+			key := strings.ToLower(strings.TrimSpace(token[:idx]))
+			value := strings.TrimSpace(token[idx+1:])
+			if key == "" || value == "" {
+				return "", "", false
+			}
+			value = strings.Trim(value, "\"',")
+			return key, value, true
+		}
+	}
+
+	return "", "", false
 }

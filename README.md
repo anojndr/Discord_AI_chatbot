@@ -62,6 +62,14 @@ Use visual search to identify objects, landmarks, text, and more from images!
 - **Text Recognition**: Extract and search text from images.
 - **Smart Results**: Formatted results with sources and links.
 
+**Advanced options:**
+- Refine results with an inline query: `googlelens <image_url> q="red"` or simply append the text after the URL (`googlelens <image_url> red shoes`).
+- Target specific result sections by adding `type=` — supported values: `all`, `products`, `exact_matches`, `visual_matches`.
+- Control localization with `hl=<language>` (e.g., `hl=en`) and `country=<country_code>` (e.g., `country=jp`).
+- Adjust content filtering using `safe=active` or `safe=off`.
+
+The bot validates these parameters against the latest SerpAPI Google Lens documentation, automatically normalizing valid values and surfacing warnings when something is ignored.
+
 ---
 
 ### Model switching with `/model`:

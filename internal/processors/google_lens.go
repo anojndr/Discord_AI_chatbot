@@ -3,7 +3,6 @@ package processors
 import (
 	"context"
 	"fmt"
-	json "github.com/json-iterator/go"
 	"io"
 	"log"
 	"net/http"
@@ -11,15 +10,31 @@ import (
 	"strings"
 	"sync"
 
+	json "github.com/json-iterator/go"
+
 	"DiscordAIChatbot/internal/config"
 	"DiscordAIChatbot/internal/storage"
 )
 
-var builderPool = sync.Pool{
-	New: func() interface{} {
-		return &strings.Builder{}
-	},
-}
+var (
+	builderPool = sync.Pool{
+		New: func() interface{} {
+			return &strings.Builder{}
+		},
+	}
+	googleLensAllowedTypes = map[string]struct{}{
+		"all":            {},
+		"products":       {},
+		"exact_matches":  {},
+		"visual_matches": {},
+	}
+	googleLensAllowedTypesList    = []string{"all", "products", "exact_matches", "visual_matches"}
+	googleLensQuerySupportedTypes = map[string]struct{}{
+		"all":            {},
+		"products":       {},
+		"visual_matches": {},
+	}
+)
 
 // GoogleLensClient handles requests to the SerpAPI Google Lens endpoint.
 type GoogleLensClient struct {
@@ -77,11 +92,30 @@ type GoogleLensResponse struct {
 
 // SearchOptions holds optional parameters for Google Lens search
 type SearchOptions struct {
-	Query      string // q parameter - search query to refine results
+	Query      string // q parameter - search query to refine results (supported for types: all, visual_matches, products)
 	Type       string // type parameter - all, products, exact_matches, visual_matches (default: "all")
 	Language   string // hl parameter - language code (e.g., "en", "es", "fr")
 	Country    string // country parameter - country code (e.g., "us", "fr", "de")
 	SafeSearch string // safe parameter - "active" or "off"
+}
+
+// NormalizeGoogleLensType normalizes a Google Lens type value and verifies that it is supported.
+func NormalizeGoogleLensType(value string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	_, ok := googleLensAllowedTypes[normalized]
+	return normalized, ok
+}
+
+// GoogleLensAllowedTypeValues returns the list of supported Google Lens type values.
+func GoogleLensAllowedTypeValues() []string {
+	result := make([]string, len(googleLensAllowedTypesList))
+	copy(result, googleLensAllowedTypesList)
+	return result
+}
+
+func isQuerySupportedForType(searchType string) bool {
+	_, ok := googleLensQuerySupportedTypes[searchType]
+	return ok
 }
 
 // Search performs a Google Lens search using SerpAPI and returns a human-readable string.
@@ -203,27 +237,53 @@ func (g *GoogleLensClient) searchWithKey(ctx context.Context, imageURL string, o
 	// Set default type if not provided
 	searchType := "all"
 	safeSearch := "off" // Default to safe search off
+	var queryValue string
 
 	if opts != nil {
-		// Note: Removed q parameter as it was causing "no results" issues
-		// The query will be handled by the LLM after getting visual matches
 		if opts.Type != "" {
-			searchType = opts.Type
+			normalizedType, ok := NormalizeGoogleLensType(opts.Type)
+			if !ok {
+				return "", fmt.Errorf("invalid Google Lens type %q: must be one of %s", opts.Type, strings.Join(GoogleLensAllowedTypeValues(), ", "))
+			}
+			searchType = normalizedType
 		}
 		if opts.Language != "" {
-			values.Set("hl", opts.Language)
+			language := strings.TrimSpace(opts.Language)
+			if language != "" {
+				values.Set("hl", language)
+			}
 		}
 		if opts.Country != "" {
-			values.Set("country", opts.Country)
+			country := strings.TrimSpace(opts.Country)
+			if country != "" {
+				values.Set("country", strings.ToLower(country))
+			}
 		}
 		if opts.SafeSearch != "" {
-			safeSearch = opts.SafeSearch
+			candidate := strings.ToLower(strings.TrimSpace(opts.SafeSearch))
+			if candidate == "active" || candidate == "off" {
+				safeSearch = candidate
+			} else {
+				log.Printf("Google Lens: ignoring invalid safe parameter value: %s", opts.SafeSearch)
+			}
+		}
+		if opts.Query != "" {
+			queryValue = strings.TrimSpace(opts.Query)
 		}
 	}
+
 	// type parameter is required per latest API docs
 	values.Set("type", searchType)
 	// Set safe search parameter
 	values.Set("safe", safeSearch)
+
+	if queryValue != "" {
+		if isQuerySupportedForType(searchType) {
+			values.Set("q", queryValue)
+		} else {
+			log.Printf("Google Lens: ignoring q parameter for type %s", searchType)
+		}
+	}
 
 	endpoint := "https://serpapi.com/search.json?" + values.Encode()
 
