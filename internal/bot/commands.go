@@ -68,13 +68,8 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 		return
 	}
 
-	// Get user's current model
-	var currentModel string
-	if userID != "" && b.userPrefs != nil {
-		currentModel = b.userPrefs.GetUserModel(context.Background(), userID, config.GetDefaultModel())
-	} else {
-		currentModel = config.GetDefaultModel()
-	}
+	// Get user's current model with safe fallback
+	currentModel := b.resolveUserModel(context.Background(), userID, config)
 
 	if len(data.Options) == 0 {
 		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -403,12 +398,7 @@ func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.Interac
 		userID = i.Member.User.ID
 	}
 
-	var currentModel string
-	if userID != "" && b.userPrefs != nil {
-		currentModel = b.userPrefs.GetUserModel(context.Background(), userID, config.GetDefaultModel())
-	} else {
-		currentModel = config.GetDefaultModel()
-	}
+	currentModel := b.resolveUserModel(context.Background(), userID, config)
 
 	// Get all model names
 	var models []string

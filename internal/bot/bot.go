@@ -16,9 +16,9 @@ import (
 	"DiscordAIChatbot/internal/auth"
 	"DiscordAIChatbot/internal/config"
 	"DiscordAIChatbot/internal/llm"
+	"DiscordAIChatbot/internal/llm/providers"
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/net"
-	"DiscordAIChatbot/internal/llm/providers"
 	"DiscordAIChatbot/internal/processors"
 	"DiscordAIChatbot/internal/storage"
 	"DiscordAIChatbot/internal/utils"
@@ -111,6 +111,39 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 	bot.setupHealthServer()
 
 	return bot, nil
+}
+
+// resolveUserModel returns a safe model name for the user, falling back to the configured default when needed.
+func (b *Bot) resolveUserModel(ctx context.Context, userID string, cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+
+	defaultModel := cfg.GetDefaultModel()
+	if userID == "" || b.userPrefs == nil {
+		return defaultModel
+	}
+
+	preferredModel := b.userPrefs.GetUserModel(ctx, userID, defaultModel)
+	if preferredModel == "" {
+		return defaultModel
+	}
+
+	if cfg.Models != nil {
+		if _, exists := cfg.Models[preferredModel]; exists {
+			return preferredModel
+		}
+	}
+
+	if preferredModel != defaultModel {
+		log.Printf("Preferred model %s for user %s not found in config. Using default model %s", preferredModel, userID, defaultModel)
+	}
+
+	if defaultModel != "" {
+		return defaultModel
+	}
+
+	return preferredModel
 }
 
 // Start starts the Discord bot

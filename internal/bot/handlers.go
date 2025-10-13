@@ -372,9 +372,9 @@ func (b *Bot) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}()
 
-	// Get user's preferred model
+	// Get user's preferred model with fallback
 	cfg = b.config.Load()
-	currentModel := b.userPrefs.GetUserModel(context.Background(), m.Author.ID, cfg.GetDefaultModel())
+	currentModel := b.resolveUserModel(context.Background(), m.Author.ID, cfg)
 
 	// Parse provider and model
 	parts := strings.SplitN(currentModel, "/", 2)
