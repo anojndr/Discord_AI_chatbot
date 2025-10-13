@@ -126,7 +126,7 @@ func (b *Bot) resolveUserModel(ctx context.Context, userID string, cfg *config.C
 	}
 
 	defaultModel := cfg.GetDefaultModel()
-	sanitizedDefault, defaultRestricted := b.sanitizeModelForUser(userID, defaultModel, cfg)
+	sanitizedDefault, defaultRestricted, _ := b.sanitizeModelForUser(userID, defaultModel, cfg)
 	if defaultRestricted {
 		if sanitizedDefault == "" {
 			log.Printf("No permitted default model available for user %s", userID)
@@ -144,13 +144,13 @@ func (b *Bot) resolveUserModel(ctx context.Context, userID string, cfg *config.C
 
 	if cfg.Models != nil {
 		if _, exists := cfg.Models[preferredModel]; exists {
-			sanitizedPreferred, restricted := b.sanitizeModelForUser(userID, preferredModel, cfg)
+			sanitizedPreferred, restricted, replaced := b.sanitizeModelForUser(userID, preferredModel, cfg)
 			if restricted {
 				if sanitizedPreferred == "" {
 					log.Printf("User %s requested restricted model %s but no alternative is configured", userID, preferredModel)
 					return defaultModel
 				}
-				if sanitizedPreferred != preferredModel {
+				if replaced && sanitizedPreferred != preferredModel {
 					if err := b.userPrefs.SetUserModel(ctx, userID, sanitizedPreferred); err != nil {
 						log.Printf("Failed to update restricted model preference for user %s: %v", userID, err)
 					}
@@ -172,17 +172,18 @@ func (b *Bot) resolveUserModel(ctx context.Context, userID string, cfg *config.C
 	return preferredModel
 }
 
-func (b *Bot) sanitizeModelForUser(userID, requestedModel string, cfg *config.Config) (string, bool) {
+func (b *Bot) sanitizeModelForUser(userID, requestedModel string, cfg *config.Config) (string, bool, bool) {
 	if cfg == nil || requestedModel == "" {
-		return requestedModel, false
+		return requestedModel, false, false
 	}
 
 	if strings.EqualFold(requestedModel, gpt5ModelName) && userID != gpt5AuthorizedUserID {
 		alternative := b.pickAlternativeModel(cfg, gpt5ModelName)
-		return alternative, true
+		replaced := !strings.EqualFold(alternative, requestedModel)
+		return alternative, true, replaced
 	}
 
-	return requestedModel, false
+	return requestedModel, false, false
 }
 
 func (b *Bot) pickAlternativeModel(cfg *config.Config, disallowed ...string) string {

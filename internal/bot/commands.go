@@ -69,14 +69,35 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 		return
 	}
 
+	ctx := context.Background()
+
+	// Capture stored preference before potential sanitization
+	var rawPreference string
+	if userID != "" && b.userPrefs != nil {
+		rawPreference = b.userPrefs.GetUserModel(ctx, userID, "")
+	}
+
 	// Get user's current model with safe fallback
-	currentModel := b.resolveUserModel(context.Background(), userID, config)
+	currentModel := b.resolveUserModel(ctx, userID, config)
+
+	// Detect automatic switching due to GPT-5 restriction
+	autoSwitchWarning := false
+	if rawPreference != "" {
+		_, restrictedPreference, replacedPreference := b.sanitizeModelForUser(userID, rawPreference, config)
+		if restrictedPreference && replacedPreference {
+			autoSwitchWarning = true
+		}
+	}
 
 	if len(data.Options) == 0 {
+		responseLines := []string{fmt.Sprintf("Current model: `%s`", currentModel)}
+		if autoSwitchWarning {
+			responseLines = append(responseLines, "model automatically switched because only sweet potet has access to gpt 5 😛")
+		}
 		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Current model: `%s`", currentModel),
+				Content: strings.Join(responseLines, "\n"),
 				Flags:   discordgo.MessageFlagsEphemeral,
 			},
 		}); err != nil {
@@ -86,12 +107,12 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 	}
 
 	requestedModel := data.Options[0].StringValue()
-	sanitizedModel, restricted := b.sanitizeModelForUser(userID, requestedModel, config)
+	sanitizedModel, restricted, _ := b.sanitizeModelForUser(userID, requestedModel, config)
 
 	var response string
 
 	if restricted {
-		response = fmt.Sprintf("❌ You do not have permission to use `%s`.", requestedModel)
+		response = "only sweet potet has access to gpt 5 😛"
 	} else if sanitizedModel == "" {
 		response = fmt.Sprintf("❌ Model `%s` is not available.", requestedModel)
 	} else if sanitizedModel == currentModel {
@@ -101,7 +122,7 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 		if userID == "" || b.userPrefs == nil {
 			response = "❌ Unable to save model preference (user ID not available)"
 		} else {
-			err := b.userPrefs.SetUserModel(context.Background(), userID, sanitizedModel)
+			err := b.userPrefs.SetUserModel(ctx, userID, sanitizedModel)
 			if err != nil {
 				log.Printf("Failed to save user model preference: %v", err)
 				response = "❌ Failed to save model preference"
@@ -417,7 +438,7 @@ func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.Interac
 	// Filter models based on partial input and exclude current model from regular list
 	var filteredModels []string
 	for _, model := range models {
-		if _, restricted := b.sanitizeModelForUser(userID, model, config); restricted {
+		if _, restricted, _ := b.sanitizeModelForUser(userID, model, config); restricted {
 			continue
 		}
 		if model != currentModel && (partial == "" || strings.Contains(strings.ToLower(model), strings.ToLower(partial))) {
