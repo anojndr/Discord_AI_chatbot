@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,11 @@ import (
 )
 
 var ()
+
+const (
+	gpt5ModelName        = "openai/gpt-5"
+	gpt5AuthorizedUserID = "676735636656357396"
+)
 
 // Bot represents the Discord bot instance that handles all Discord interactions,
 // manages conversations, processes messages, and integrates with LLM providers.
@@ -120,6 +126,13 @@ func (b *Bot) resolveUserModel(ctx context.Context, userID string, cfg *config.C
 	}
 
 	defaultModel := cfg.GetDefaultModel()
+	sanitizedDefault, defaultRestricted := b.sanitizeModelForUser(userID, defaultModel, cfg)
+	if defaultRestricted {
+		if sanitizedDefault == "" {
+			log.Printf("No permitted default model available for user %s", userID)
+		}
+		defaultModel = sanitizedDefault
+	}
 	if userID == "" || b.userPrefs == nil {
 		return defaultModel
 	}
@@ -131,7 +144,20 @@ func (b *Bot) resolveUserModel(ctx context.Context, userID string, cfg *config.C
 
 	if cfg.Models != nil {
 		if _, exists := cfg.Models[preferredModel]; exists {
-			return preferredModel
+			sanitizedPreferred, restricted := b.sanitizeModelForUser(userID, preferredModel, cfg)
+			if restricted {
+				if sanitizedPreferred == "" {
+					log.Printf("User %s requested restricted model %s but no alternative is configured", userID, preferredModel)
+					return defaultModel
+				}
+				if sanitizedPreferred != preferredModel {
+					if err := b.userPrefs.SetUserModel(ctx, userID, sanitizedPreferred); err != nil {
+						log.Printf("Failed to update restricted model preference for user %s: %v", userID, err)
+					}
+				}
+				return sanitizedPreferred
+			}
+			return sanitizedPreferred
 		}
 	}
 
@@ -144,6 +170,58 @@ func (b *Bot) resolveUserModel(ctx context.Context, userID string, cfg *config.C
 	}
 
 	return preferredModel
+}
+
+func (b *Bot) sanitizeModelForUser(userID, requestedModel string, cfg *config.Config) (string, bool) {
+	if cfg == nil || requestedModel == "" {
+		return requestedModel, false
+	}
+
+	if strings.EqualFold(requestedModel, gpt5ModelName) && userID != gpt5AuthorizedUserID {
+		alternative := b.pickAlternativeModel(cfg, gpt5ModelName)
+		return alternative, true
+	}
+
+	return requestedModel, false
+}
+
+func (b *Bot) pickAlternativeModel(cfg *config.Config, disallowed ...string) string {
+	if cfg == nil {
+		return ""
+	}
+
+	candidates := []string{cfg.FallbackModel, cfg.GetDefaultModel()}
+	for model := range cfg.Models {
+		candidates = append(candidates, model)
+	}
+
+	for _, candidate := range candidates {
+		if b.isModelAllowed(cfg, candidate, disallowed) {
+			return candidate
+		}
+	}
+
+	return ""
+}
+
+func (b *Bot) isModelAllowed(cfg *config.Config, candidate string, disallowed []string) bool {
+	if candidate == "" {
+		return false
+	}
+
+	if cfg.Models != nil {
+		if _, exists := cfg.Models[candidate]; !exists {
+			return false
+		}
+	}
+
+	for _, blocked := range disallowed {
+		if strings.EqualFold(candidate, blocked) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Start starts the Discord bot

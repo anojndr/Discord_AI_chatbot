@@ -14,6 +14,7 @@ import (
 	"DiscordAIChatbot/internal/messaging"
 	"DiscordAIChatbot/internal/storage"
 	"DiscordAIChatbot/internal/uploader"
+
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -84,24 +85,29 @@ func (b *Bot) handleModelCommand(s *discordgo.Session, i *discordgo.InteractionC
 		return
 	}
 
-	newModel := data.Options[0].StringValue()
+	requestedModel := data.Options[0].StringValue()
+	sanitizedModel, restricted := b.sanitizeModelForUser(userID, requestedModel, config)
 
 	var response string
 
-	if newModel == currentModel {
-		response = fmt.Sprintf("Current model: `%s`", newModel)
+	if restricted {
+		response = fmt.Sprintf("❌ You do not have permission to use `%s`.", requestedModel)
+	} else if sanitizedModel == "" {
+		response = fmt.Sprintf("❌ Model `%s` is not available.", requestedModel)
+	} else if sanitizedModel == currentModel {
+		response = fmt.Sprintf("Current model: `%s`", sanitizedModel)
 	} else {
 		// Save user's model preference
 		if userID == "" || b.userPrefs == nil {
 			response = "❌ Unable to save model preference (user ID not available)"
 		} else {
-			err := b.userPrefs.SetUserModel(context.Background(), userID, newModel)
+			err := b.userPrefs.SetUserModel(context.Background(), userID, sanitizedModel)
 			if err != nil {
 				log.Printf("Failed to save user model preference: %v", err)
 				response = "❌ Failed to save model preference"
 			} else {
-				response = fmt.Sprintf("Model switched to: `%s`", newModel)
-				log.Printf("User %s switched model to: %s", userID, newModel)
+				response = fmt.Sprintf("Model switched to: `%s`", sanitizedModel)
+				log.Printf("User %s switched model to: %s", userID, sanitizedModel)
 			}
 		}
 	}
@@ -411,6 +417,9 @@ func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.Interac
 	// Filter models based on partial input and exclude current model from regular list
 	var filteredModels []string
 	for _, model := range models {
+		if _, restricted := b.sanitizeModelForUser(userID, model, config); restricted {
+			continue
+		}
 		if model != currentModel && (partial == "" || strings.Contains(strings.ToLower(model), strings.ToLower(partial))) {
 			filteredModels = append(filteredModels, model)
 		}
