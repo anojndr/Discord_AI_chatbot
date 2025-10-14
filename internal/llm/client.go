@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"fmt"
-	json "github.com/json-iterator/go"
 	"io"
 	"log"
 	"net/http"
@@ -11,9 +10,11 @@ import (
 	"sync"
 	"time"
 
+	json "github.com/json-iterator/go"
+
 	"golang.org/x/sync/singleflight"
 
-	"github.com/hashicorp/golang-lru/v2"
+	lru "github.com/hashicorp/golang-lru/v2"
 	openai "github.com/sashabaranov/go-openai"
 	"google.golang.org/genai"
 
@@ -614,6 +615,15 @@ func (c *LLMClient) AddSystemPrompt(messages []messaging.OpenAIMessage, systemPr
 	return append(messages, systemMessage)
 }
 
+// resolveFallbackModel enforces the global fallback policy to Gemini 2.5 Flash.
+func (c *LLMClient) resolveFallbackModel(preferred string) string {
+	target := config.DefaultFallbackModel
+	if preferred != "" && preferred != target {
+		logging.LogToFile("Overriding fallback model %s with %s per global policy", preferred, target)
+	}
+	return target
+}
+
 // FallbackResult contains the result of a fallback operation
 type FallbackResult struct {
 	UsedFallback  bool
@@ -621,14 +631,15 @@ type FallbackResult struct {
 	OriginalError error
 }
 
-// StreamChatCompletionWithFallback streams chat completion with an optional fallback model.
-// If fallbackModel is an empty string, no fallback will be attempted.
+// StreamChatCompletionWithFallback streams chat completion with an enforced Gemini 2.5 Flash fallback.
 func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model string, messages []messaging.OpenAIMessage, detectedURLs []string, fallbackModel string) (<-chan StreamResponse, *FallbackResult, error) {
 	fallbackResult := &FallbackResult{
 		UsedFallback:  false,
 		FallbackModel: "",
 		OriginalError: nil,
 	}
+
+	fallbackModel = c.resolveFallbackModel(fallbackModel)
 
 	// Try original model first
 	stream, err := c.StreamChatCompletion(ctx, model, messages, detectedURLs)
@@ -659,14 +670,15 @@ func (c *LLMClient) StreamChatCompletionWithFallback(ctx context.Context, model 
 	return stream, fallbackResult, nil
 }
 
-// GetChatCompletionWithFallback gets a complete chat completion with an optional fallback model.
-// If fallbackModel is an empty string, no fallback will be attempted.
+// GetChatCompletionWithFallback gets a complete chat completion with an enforced Gemini 2.5 Flash fallback.
 func (c *LLMClient) GetChatCompletionWithFallback(ctx context.Context, messages []messaging.OpenAIMessage, model string, detectedURLs []string, fallbackModel string) (string, *FallbackResult, error) {
 	fallbackResult := &FallbackResult{
 		UsedFallback:  false,
 		FallbackModel: "",
 		OriginalError: nil,
 	}
+
+	fallbackModel = c.resolveFallbackModel(fallbackModel)
 
 	// Try original model first
 	response, err := c.GetChatCompletion(ctx, messages, model, detectedURLs)

@@ -18,7 +18,7 @@ status_message: "Serving LLMs on Discord"
 default_model: gemini/gemini-flash-latest
 
 # Fallback model to use when the primary model fails
-fallback_model: "mistral/mistral-medium-2505"
+fallback_model: "gemini/gemini-2.5-flash"
 
 # Generative models
 image_generation_model: "gemini/imagen-4.0-ultra-generate-preview-06-06"
@@ -170,7 +170,7 @@ web_search:
   max_chars_per_url: 5000
   max_urls_per_extract: 20 # As per RAG-Forge API docs
   model: gemini/gemini-flash-latest  # Model for web search decisions
-  fallback_model: "mistral/mistral-medium-2505" # Fallback model for web search decisions
+  fallback_model: "gemini/gemini-2.5-flash" # Fallback model for web search decisions
   gemini_grounding: false # Use Google Search grounding for Gemini models
   decider_prompt: |
     ## Task

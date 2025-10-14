@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	json "github.com/json-iterator/go"
 	"log"
 	"net/http"
 	"regexp"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	json "github.com/json-iterator/go"
 
 	"golang.org/x/sync/singleflight"
 
@@ -248,17 +249,16 @@ func (w *WebSearchClient) DecideWebSearch(ctx context.Context, llmClient *llm.LL
 		// Check if the error warrants a fallback
 		if llmClient.ShouldFallback(err) {
 			log.Printf("Web search decider failed with primary model %s, attempting fallback: %v", model, err)
-			fallbackModel := w.config.WebSearch.FallbackModel
-			if fallbackModel != "" {
-				log.Printf("Attempting web search decider with fallback model %s", fallbackModel)
-				responseContent, err = w.getDecisionFromModel(ctx, llmClient, fallbackModel, messages)
-				if err != nil {
-					return nil, fmt.Errorf("web search decider failed with both primary and fallback models: %w", err)
-				}
-				log.Printf("Successfully used fallback model %s for web search decision", fallbackModel)
-			} else {
-				return nil, fmt.Errorf("web search decider failed and no fallback model is configured: %w", err)
+			fallbackModel := config.DefaultFallbackModel
+			if w.config.WebSearch.FallbackModel != "" && w.config.WebSearch.FallbackModel != fallbackModel {
+				log.Printf("Overriding configured web search fallback %s with %s per global policy", w.config.WebSearch.FallbackModel, fallbackModel)
 			}
+			log.Printf("Attempting web search decider with fallback model %s", fallbackModel)
+			responseContent, err = w.getDecisionFromModel(ctx, llmClient, fallbackModel, messages)
+			if err != nil {
+				return nil, fmt.Errorf("web search decider failed with both primary and fallback models: %w", err)
+			}
+			log.Printf("Successfully used fallback model %s for web search decision", fallbackModel)
 		} else {
 			// Non-fallbackable error
 			return nil, fmt.Errorf("web search decider failed with non-fallbackable error: %w", err)

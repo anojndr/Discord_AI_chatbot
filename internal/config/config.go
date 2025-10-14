@@ -300,6 +300,9 @@ func parseConfig(data []byte) (*Config, error) {
 	if config.DefaultModel == "" {
 		config.DefaultModel = DefaultModel
 	}
+	if config.FallbackModel == "" {
+		config.FallbackModel = DefaultFallbackModel
+	}
 	if config.MaxImages == 0 {
 		config.MaxImages = DefaultMaxImages
 	}
@@ -334,6 +337,9 @@ func parseConfig(data []byte) (*Config, error) {
 	}
 	if config.WebSearch.Model == "" {
 		config.WebSearch.Model = DefaultWebSearchModel
+	}
+	if config.WebSearch.FallbackModel == "" {
+		config.WebSearch.FallbackModel = DefaultFallbackModel
 	}
 
 	// Set logging defaults

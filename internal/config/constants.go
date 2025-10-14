@@ -10,7 +10,8 @@ const (
 	DefaultUseThreads    = false
 
 	// LLM defaults
-	DefaultModel = "gemini/gemini-2.5-pro"
+	DefaultModel         = "gemini/gemini-2.5-pro"
+	DefaultFallbackModel = "gemini/gemini-2.5-flash"
 
 	// Discord status message length limit
 	MaxStatusMessageLength = 128
