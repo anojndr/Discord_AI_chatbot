@@ -173,17 +173,27 @@ func (b *Bot) resolveUserModel(ctx context.Context, userID string, cfg *config.C
 }
 
 func (b *Bot) sanitizeModelForUser(userID, requestedModel string, cfg *config.Config) (string, bool, bool) {
-	if cfg == nil || requestedModel == "" {
+	if cfg == nil {
 		return requestedModel, false, false
 	}
 
-	if strings.EqualFold(requestedModel, gpt5ModelName) && userID != gpt5AuthorizedUserID {
+	model := strings.TrimSpace(requestedModel)
+	if model == "" {
+		return model, false, false
+	}
+
+	// Normalize shorthand model names for comparison while preserving configured casing when allowed.
+	if strings.EqualFold(model, "gpt-5") {
+		model = gpt5ModelName
+	}
+
+	if strings.EqualFold(model, gpt5ModelName) && userID != gpt5AuthorizedUserID {
 		alternative := b.pickAlternativeModel(cfg, gpt5ModelName)
-		replaced := !strings.EqualFold(alternative, requestedModel)
+		replaced := !strings.EqualFold(alternative, model)
 		return alternative, true, replaced
 	}
 
-	return requestedModel, false, false
+	return model, false, false
 }
 
 func (b *Bot) pickAlternativeModel(cfg *config.Config, disallowed ...string) string {

@@ -438,9 +438,6 @@ func (b *Bot) handleModelAutocomplete(s *discordgo.Session, i *discordgo.Interac
 	// Filter models based on partial input and exclude current model from regular list
 	var filteredModels []string
 	for _, model := range models {
-		if _, restricted, _ := b.sanitizeModelForUser(userID, model, config); restricted {
-			continue
-		}
 		if model != currentModel && (partial == "" || strings.Contains(strings.ToLower(model), strings.ToLower(partial))) {
 			filteredModels = append(filteredModels, model)
 		}
