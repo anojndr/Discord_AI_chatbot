@@ -74,10 +74,8 @@ func (fp *FileProcessor) processPDF(data []byte) (string, error) {
 	// Clean up the extracted text
 	text = fp.cleanExtractedText(text)
 
-	if strings.TrimSpace(text) == "" {
-		return "", fmt.Errorf("no text content found in PDF")
-	}
-
+	// Do not return an error if the PDF has no text content.
+	// The caller can decide if this is an error condition.
 	return text, nil
 }
 

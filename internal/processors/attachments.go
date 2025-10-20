@@ -127,7 +127,11 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 					},
 				}
 
-				if err == nil && strings.TrimSpace(extractedText) != "" {
+				if err != nil {
+					// Log the error but don't treat it as a "bad attachment"
+					// This allows the PDF to still be sent to Gemini models
+					log.Printf("Failed to extract text from PDF: %v", err)
+				} else if strings.TrimSpace(extractedText) != "" {
 					result.text = fileTypeInfo + extractedText
 					result.shouldProcessURLs = shouldProcessURLs
 				}
