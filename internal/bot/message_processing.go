@@ -99,7 +99,8 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 
 	// Task 3: Process Current Message Attachments
 	eg.Go(func() error {
-		currentImages, currentAudio, currentPDFs, currentText, currentBad, currentShouldProcessURLs, err := processors.ProcessAttachments(gctx, msg.Attachments, b.fileProcessor)
+		userModel := b.resolveUserModel(gctx, msg.Author.ID, b.config.Load())
+		currentImages, currentAudio, currentPDFs, currentText, currentBad, currentShouldProcessURLs, err := processors.ProcessAttachments(gctx, msg.Attachments, b.fileProcessor, b.llmClient, userModel)
 		mu.Lock()
 		defer mu.Unlock()
 		images = append(images, currentImages...)
@@ -123,7 +124,8 @@ func (b *Bot) processMessage(s *discordgo.Session, msg *discordgo.Message, node 
 	if isCurrentMessage && parentMsg != nil && len(parentMsg.Attachments) > 0 && !isDirectReply {
 		eg.Go(func() error {
 			log.Printf("Processing %d attachments from parent message for non-reply context", len(parentMsg.Attachments))
-			parentImages, parentAudio, parentPDFs, parentText, parentBad, parentShouldProcessURLs, err := processors.ProcessAttachments(gctx, parentMsg.Attachments, b.fileProcessor)
+			userModel := b.resolveUserModel(gctx, msg.Author.ID, b.config.Load())
+			parentImages, parentAudio, parentPDFs, parentText, parentBad, parentShouldProcessURLs, err := processors.ProcessAttachments(gctx, parentMsg.Attachments, b.fileProcessor, b.llmClient, userModel)
 			mu.Lock()
 			defer mu.Unlock()
 			images = append(parentImages, images...)

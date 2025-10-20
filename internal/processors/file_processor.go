@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -108,23 +107,6 @@ func (fp *FileProcessor) extractPDFText(data []byte) (string, error) {
 
 // shouldProcessURLs determines if URLs should be processed for a given file type.
 func (fp *FileProcessor) shouldProcessURLs(contentType string, filename string) bool {
-	// By default, do not process URLs in text or PDF files
-	if strings.HasPrefix(contentType, "application/pdf") {
-		return false
-	}
-
-	// Check for common text file extensions
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".txt", ".log", ".csv", ".tsv":
-		return false
-	}
-
-	// For generic text content types, default to false unless specified otherwise
-	if strings.HasPrefix(contentType, "text/plain") {
-		return false
-	}
-
 	// For other file types, assume URLs should be processed
 	return true
 }

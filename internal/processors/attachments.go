@@ -19,7 +19,13 @@ import (
 )
 
 // ProcessAttachments processes Discord message attachments and returns images, audio, and text content
-func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAttachment, fileProcessor *FileProcessor) ([]messaging.ImageContent, []messaging.AudioContent, []messaging.PDFContent, string, bool, bool, error) {
+// IsGeminiModelChecker defines an interface for checking if a model is a Gemini model.
+// This is used to avoid a direct dependency on the LLM client in the processor.
+type IsGeminiModelChecker interface {
+	IsGeminiModel(model string) bool
+}
+
+func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAttachment, fileProcessor *FileProcessor, llmClient IsGeminiModelChecker, model string) ([]messaging.ImageContent, []messaging.AudioContent, []messaging.PDFContent, string, bool, bool, error) {
 	log.Println("Starting attachment processing...")
 	// Launch one goroutine per attachment without an artificial semaphore limit.
 
@@ -128,16 +134,9 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 				return
 			} else if isPDF {
 				log.Printf("Processing attachment %d as PDF...", index)
-				// PDF attachment -> store raw data AND extract text for non-Gemini models
-				extractedText, shouldProcessURLs, err := fileProcessor.ProcessFile(data, func() string {
-					if attachment.ContentType != "" {
-						return attachment.ContentType
-					}
-					// Fallback content-type when missing but extension indicates PDF
-					return "application/pdf"
-				}(), attachment.Filename)
+				// PDF attachment -> store raw data. Text is extracted only for non-Gemini models.
+				isGemini := llmClient.IsGeminiModel(model)
 
-				var fileTypeInfo string = fmt.Sprintf("**📄 PDF Document: %s**\n", attachment.Filename)
 				result := indexedResult{
 					idx: index,
 					pdf: messaging.PDFContent{
@@ -154,19 +153,23 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 					},
 				}
 
-				if err != nil {
-					// If text extraction fails, create a user-facing error message.
-					// This is better than failing silently.
-					log.Printf("Failed to extract text from PDF %d: %v", index, err)
-					result.text = fmt.Sprintf("%s\n> ⚠️ **Error:** Could not extract text from this PDF.", fileTypeInfo)
-				} else if strings.TrimSpace(extractedText) != "" {
-					log.Printf("Extracted %d chars from PDF %d.", len(extractedText), index)
-					result.text = fileTypeInfo + extractedText
-					result.shouldProcessURLs = shouldProcessURLs
+				if !isGemini {
+					extractedText, shouldProcessURLs, err := fileProcessor.ProcessFile(data, result.pdf.MIMEType, attachment.Filename)
+					var fileTypeInfo string = fmt.Sprintf("**📄 PDF Document: %s**\n", attachment.Filename)
+
+					if err != nil {
+						log.Printf("Failed to extract text from PDF %d: %v", index, err)
+						result.text = fmt.Sprintf("%s\n> ⚠️ **Error:** Could not extract text from this PDF.", fileTypeInfo)
+					} else if strings.TrimSpace(extractedText) != "" {
+						log.Printf("Extracted %d chars from PDF %d.", len(extractedText), index)
+						result.text = fileTypeInfo + extractedText
+						result.shouldProcessURLs = shouldProcessURLs
+					} else {
+						log.Printf("PDF %d is empty or has no text.", index)
+						result.text = fmt.Sprintf("%s\n> 📄 This PDF appears to be empty or contains no text.", fileTypeInfo)
+					}
 				} else {
-					log.Printf("PDF %d is empty or has no text.", index)
-					// If the PDF is empty, provide a message indicating that.
-					result.text = fmt.Sprintf("%s\n> 📄 This PDF appears to be empty or contains no text.", fileTypeInfo)
+					log.Printf("Skipping PDF text extraction for Gemini model.")
 				}
 
 				resultsChan <- result
