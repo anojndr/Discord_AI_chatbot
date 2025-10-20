@@ -2,9 +2,11 @@ package processors
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dslipak/pdf"
 	"github.com/gogits/chardet"
@@ -45,8 +47,33 @@ func (fp *FileProcessor) ProcessFile(data []byte, contentType, filename string) 
 	}
 }
 
-// processPDF extracts text from PDF files
+// processPDF extracts text from PDF files with a timeout
 func (fp *FileProcessor) processPDF(data []byte) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	type result struct {
+		text string
+		err  error
+	}
+
+	resultChan := make(chan result, 1)
+
+	go func() {
+		text, err := fp.extractPDFText(data)
+		resultChan <- result{text: text, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", fmt.Errorf("PDF text extraction timed out after 15 seconds")
+	case res := <-resultChan:
+		return res.text, res.err
+	}
+}
+
+// extractPDFText contains the original PDF text extraction logic
+func (fp *FileProcessor) extractPDFText(data []byte) (string, error) {
 	// Create a reader from the PDF data
 	reader := bytes.NewReader(data)
 
