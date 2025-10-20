@@ -24,6 +24,17 @@ type GeminiProvider struct {
 	apiKeyManager *storage.APIKeyManager
 }
 
+const geminiInlinePDFMaxBytes = 20 * 1024 * 1024 // 20MB limit from Gemini inline upload guidance
+
+type pdfUploadRef struct {
+	contentIdx  int
+	partIdx     int
+	data        []byte
+	mimeType    string
+	displayName string
+	sizeBytes   int
+}
+
 // Context key to disable Gemini grounding tools dynamically
 type disableGroundingKey struct{}
 
@@ -50,11 +61,11 @@ func NewGeminiProvider(cfg *config.Config, apiKeyManager *storage.APIKeyManager)
 
 // StreamResponse represents a streaming response chunk
 type StreamResponse struct {
-	Content          string
-	FinishReason     string
-	Error            error
-	ImageData        []byte
-	ImageMIMEType    string
+	Content           string
+	FinishReason      string
+	Error             error
+	ImageData         []byte
+	ImageMIMEType     string
 	GroundingMetadata *genai.GroundingMetadata
 }
 
@@ -87,11 +98,11 @@ func ExtractSystemMessages(messages []messaging.OpenAIMessage) (string, []messag
 
 // ConvertToGeminiMessages converts OpenAI messages to Gemini format (excluding system messages)
 // System messages are handled separately via the SystemInstruction parameter in GenerateContentConfig
-func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages []messaging.OpenAIMessage, downloadImageFunc func(context.Context, string) ([]byte, string, error)) ([]*genai.Content, error) {
+func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages []messaging.OpenAIMessage, downloadImageFunc func(context.Context, string) ([]byte, string, error)) ([]*genai.Content, []pdfUploadRef, error) {
 	var contents []*genai.Content
+	var pdfUploads []pdfUploadRef
 
 	for _, msg := range messages {
-		// Skip system messages - they should be handled separately as system_instruction
 		if msg.Role == "system" {
 			continue
 		}
@@ -107,8 +118,15 @@ func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages [
 		}
 
 		var parts []*genai.Part
+		type pdfUploadCandidate struct {
+			partIdx     int
+			data        []byte
+			mimeType    string
+			displayName string
+			sizeBytes   int
+		}
+		var pendingPDFs []pdfUploadCandidate
 
-		// Handle different content types
 		switch content := msg.Content.(type) {
 		case string:
 			if content != "" {
@@ -116,10 +134,16 @@ func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages [
 			}
 		case []messaging.MessageContent:
 			for _, part := range content {
-				if part.Type == "text" && part.Text != "" {
-					parts = append(parts, genai.NewPartFromText(part.Text))
-				} else if part.Type == "image_url" && part.ImageURL != nil {
-					// Download image from Discord CDN and convert to inline data
+				switch part.Type {
+				case "text":
+					if part.Text != "" {
+						parts = append(parts, genai.NewPartFromText(part.Text))
+					}
+				case "image_url":
+					if part.ImageURL == nil {
+						continue
+					}
+
 					imageData, mimeType, err := downloadImageFunc(ctx, part.ImageURL.URL)
 					if err != nil {
 						log.Printf("Failed to download image from %s: %v", part.ImageURL.URL, err)
@@ -141,48 +165,63 @@ func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages [
 								continue
 							}
 							frameData := buf.Bytes()
-							blob := &genai.Blob{
-								MIMEType: "image/png",
-								Data:     frameData,
-							}
-							parts = append(parts, &genai.Part{InlineData: blob})
+							parts = append(parts, genai.NewPartFromBytes(frameData, "image/png"))
 							log.Printf("Successfully processed GIF frame %d as PNG: %d bytes", i, len(frameData))
 						}
 					} else {
-						blob := &genai.Blob{
-							MIMEType: mimeType,
-							Data:     imageData,
-						}
-						parts = append(parts, &genai.Part{InlineData: blob})
+						parts = append(parts, genai.NewPartFromBytes(imageData, mimeType))
 						if strings.HasPrefix(part.ImageURL.URL, "data:") {
 							log.Printf("Successfully processed data URL image: %d bytes, %s", len(imageData), mimeType)
 						} else {
 							log.Printf("Successfully downloaded and converted Discord image to inline data: %d bytes, %s", len(imageData), mimeType)
 						}
 					}
-				} else if part.Type == "generated_image" && part.GeneratedImage != nil {
-					// Handle generated images with inline data
-					blob := &genai.Blob{
-						MIMEType: part.GeneratedImage.MIMEType,
-						Data:     part.GeneratedImage.Data,
+				case "generated_image":
+					if part.GeneratedImage == nil {
+						continue
 					}
-					parts = append(parts, &genai.Part{InlineData: blob})
-				} else if part.Type == "audio_file" && part.AudioFile != nil {
-					// Handle audio files with inline data
-					blob := &genai.Blob{
-						MIMEType: part.AudioFile.MIMEType,
-						Data:     part.AudioFile.Data,
+					parts = append(parts, genai.NewPartFromBytes(part.GeneratedImage.Data, part.GeneratedImage.MIMEType))
+				case "audio_file":
+					if part.AudioFile == nil {
+						continue
 					}
-					parts = append(parts, &genai.Part{InlineData: blob})
+					parts = append(parts, genai.NewPartFromBytes(part.AudioFile.Data, part.AudioFile.MIMEType))
 					log.Printf("Successfully processed audio file: %d bytes, %s", len(part.AudioFile.Data), part.AudioFile.MIMEType)
-				} else if part.Type == "pdf_file" && part.PDFFile != nil {
-					// Handle PDF files with inline data
-					blob := &genai.Blob{
-						MIMEType: part.PDFFile.MIMEType,
-						Data:     part.PDFFile.Data,
+				case "pdf_file":
+					if part.PDFFile == nil {
+						continue
 					}
-					parts = append(parts, &genai.Part{InlineData: blob})
-					log.Printf("Successfully processed PDF file: %d bytes, %s", len(part.PDFFile.Data), part.PDFFile.MIMEType)
+
+					pdfData := part.PDFFile.Data
+					if len(pdfData) == 0 {
+						log.Printf("Skipping PDF attachment with empty payload (url=%s)", part.PDFFile.URL)
+						continue
+					}
+
+					mimeType := part.PDFFile.MIMEType
+					if strings.TrimSpace(mimeType) == "" {
+						mimeType = "application/pdf"
+					}
+
+					displayName := part.PDFFile.Filename
+					if strings.TrimSpace(displayName) == "" {
+						displayName = fmt.Sprintf("attachment-%d.pdf", len(pdfUploads)+len(pendingPDFs)+1)
+					}
+
+					if len(pdfData) > geminiInlinePDFMaxBytes {
+						parts = append(parts, &genai.Part{})
+						pendingPDFs = append(pendingPDFs, pdfUploadCandidate{
+							partIdx:     len(parts) - 1,
+							data:        pdfData,
+							mimeType:    mimeType,
+							displayName: displayName,
+							sizeBytes:   len(pdfData),
+						})
+						log.Printf("Queued PDF for File API upload: %s (%d bytes)", displayName, len(pdfData))
+					} else {
+						parts = append(parts, genai.NewPartFromBytes(pdfData, mimeType))
+						log.Printf("Embedded PDF inline: %s (%d bytes)", displayName, len(pdfData))
+					}
 				}
 			}
 		default:
@@ -192,11 +231,23 @@ func (g *GeminiProvider) ConvertToGeminiMessages(ctx context.Context, messages [
 		}
 
 		if len(parts) > 0 {
-			contents = append(contents, genai.NewContentFromParts(parts, role))
+			content := genai.NewContentFromParts(parts, role)
+			contentIdx := len(contents)
+			contents = append(contents, content)
+			for _, pending := range pendingPDFs {
+				pdfUploads = append(pdfUploads, pdfUploadRef{
+					contentIdx:  contentIdx,
+					partIdx:     pending.partIdx,
+					data:        pending.data,
+					mimeType:    pending.mimeType,
+					displayName: pending.displayName,
+					sizeBytes:   pending.sizeBytes,
+				})
+			}
 		}
 	}
 
-	return contents, nil
+	return contents, pdfUploads, nil
 }
 
 // CreateGeminiStream creates a streaming chat completion using Gemini
@@ -229,41 +280,13 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 
 	// Extract system messages and convert remaining messages to Gemini format
 	systemInstruction, nonSystemMessages := ExtractSystemMessages(messages)
-	contents, err := g.ConvertToGeminiMessages(ctx, nonSystemMessages, downloadImageFunc)
+	baseContents, basePDFUploads, err := g.ConvertToGeminiMessages(ctx, nonSystemMessages, downloadImageFunc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert messages: %w", err)
 	}
 
 	// Log request start
 	logging.LogToFile("Starting Gemini LLM request: Model=%s, Provider=%s", modelName, providerName)
-
-	// Debug: Print Gemini payload
-	logging.LogExternalContentToFile("=== DEBUG: Gemini Payload ===")
-	logging.LogExternalContentToFile("Model: %s", modelName)
-	logging.LogExternalContentToFile("Provider: %s", providerName)
-	if systemInstruction != "" {
-		logging.LogExternalContentToFile("SystemInstruction: %s", systemInstruction)
-	}
-	for i, content := range contents {
-		logging.LogExternalContentToFile("Message %d [Role: %s]:", i, content.Role)
-		for j, part := range content.Parts {
-			if part.Text != "" {
-				logging.LogExternalContentToFile("  Part %d [Text]: %s", j, part.Text)
-			}
-			if part.InlineData != nil {
-				if strings.HasPrefix(part.InlineData.MIMEType, "image/") {
-					logging.LogExternalContentToFile("  Part %d [Image]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
-				} else if strings.HasPrefix(part.InlineData.MIMEType, "audio/") {
-					logging.LogExternalContentToFile("  Part %d [Audio]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
-				} else if part.InlineData.MIMEType == "application/pdf" {
-					logging.LogExternalContentToFile("  Part %d [PDF]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
-				} else {
-					logging.LogExternalContentToFile("  Part %d [Data]: %s, %d bytes", j, part.InlineData.MIMEType, len(part.InlineData.Data))
-				}
-			}
-		}
-	}
-	logging.LogExternalContentToFile("=== END DEBUG ===\n")
 
 	responseChan := make(chan StreamResponse, 10)
 
@@ -273,6 +296,9 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 		// Try API keys until one works or we run out
 		maxRetries := len(availableKeys)
 		for attempt := 0; attempt < maxRetries; attempt++ {
+			contents := cloneGeminiContents(baseContents)
+			pdfUploads := clonePDFUploads(basePDFUploads)
+
 			// Get next API key
 			apiKey, err := g.apiKeyManager.GetNextAPIKey(ctx, providerName, availableKeys)
 			if err != nil {
@@ -306,6 +332,32 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 				responseChan <- StreamResponse{Error: fmt.Errorf("failed to create Gemini client: %w", err)}
 				return
 			}
+
+			if len(pdfUploads) > 0 {
+				uploadErr := retryWithInternalBackoff(ctx, func() error {
+					return retryWith503Backoff(ctx, func() error {
+						return g.attachPDFUploads(ctx, client, contents, pdfUploads)
+					})
+				})
+				if uploadErr != nil {
+					if isAPIKeyError(uploadErr) {
+						markErr := g.apiKeyManager.MarkKeyAsBad(ctx, providerName, apiKey, uploadErr.Error())
+						if markErr != nil {
+							log.Printf("Failed to mark API key as bad after PDF upload failure: %v", markErr)
+						}
+						log.Printf("API key issue detected during PDF upload, trying next key: %v", uploadErr)
+						continue
+					}
+					if is503Error(uploadErr) || isInternalError(uploadErr) {
+						log.Printf("Transient error during PDF upload, retrying with next key: %v", uploadErr)
+						continue
+					}
+					responseChan <- StreamResponse{Error: fmt.Errorf("failed to upload PDF attachments: %w", uploadErr)}
+					return
+				}
+			}
+
+			g.logGeminiPayload(modelName, providerName, systemInstruction, contents, attempt)
 
 			// Prepare generation config
 			config := &genai.GenerateContentConfig{
@@ -388,7 +440,7 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 			}
 
 			// Debug: Print Gemini generation config
-			logging.LogExternalContentToFile("=== DEBUG: Gemini Generation Config ===")
+			logging.LogExternalContentToFile("=== DEBUG: Gemini Generation Config (attempt %d) ===", attempt+1)
 			if config.SystemInstruction != nil {
 				logging.LogExternalContentToFile("SystemInstruction: %s", systemInstruction)
 			}
@@ -502,6 +554,124 @@ func (g *GeminiProvider) CreateGeminiStream(ctx context.Context, model string, m
 	}()
 
 	return responseChan, nil
+}
+
+func cloneGeminiContents(contents []*genai.Content) []*genai.Content {
+	if len(contents) == 0 {
+		return nil
+	}
+
+	clones := make([]*genai.Content, len(contents))
+	for i, content := range contents {
+		if content == nil {
+			continue
+		}
+		copyContent := &genai.Content{
+			Role:  content.Role,
+			Parts: make([]*genai.Part, len(content.Parts)),
+		}
+		for j, part := range content.Parts {
+			if part == nil {
+				continue
+			}
+			partCopy := *part
+			copyContent.Parts[j] = &partCopy
+		}
+		clones[i] = copyContent
+	}
+	return clones
+}
+
+func clonePDFUploads(uploads []pdfUploadRef) []pdfUploadRef {
+	if len(uploads) == 0 {
+		return nil
+	}
+	cloned := make([]pdfUploadRef, len(uploads))
+	copy(cloned, uploads)
+	return cloned
+}
+
+func (g *GeminiProvider) attachPDFUploads(ctx context.Context, client *genai.Client, contents []*genai.Content, uploads []pdfUploadRef) error {
+	for _, upload := range uploads {
+		if upload.contentIdx < 0 || upload.contentIdx >= len(contents) {
+			return fmt.Errorf("invalid PDF content index %d", upload.contentIdx)
+		}
+		content := contents[upload.contentIdx]
+		if content == nil {
+			return fmt.Errorf("missing content at index %d for PDF upload", upload.contentIdx)
+		}
+		if upload.partIdx < 0 || upload.partIdx >= len(content.Parts) {
+			return fmt.Errorf("invalid PDF part index %d", upload.partIdx)
+		}
+		part := content.Parts[upload.partIdx]
+		if part == nil {
+			part = &genai.Part{}
+			content.Parts[upload.partIdx] = part
+		} else {
+			part.Text = ""
+			part.InlineData = nil
+			part.FileData = nil
+		}
+
+		reader := bytes.NewReader(upload.data)
+		file, err := client.Files.Upload(ctx, reader, &genai.UploadFileConfig{
+			MIMEType:    upload.mimeType,
+			DisplayName: upload.displayName,
+		})
+		if err != nil {
+			return err
+		}
+
+		uploadedPart := genai.NewPartFromFile(*file)
+		if uploadedPart == nil {
+			return fmt.Errorf("failed to build Gemini part for uploaded PDF %s", upload.displayName)
+		}
+
+		*part = *uploadedPart
+		logging.LogExternalContentToFile("Uploaded PDF via File API: %s (%d bytes) -> %s", upload.displayName, upload.sizeBytes, file.Name)
+	}
+	return nil
+}
+
+func (g *GeminiProvider) logGeminiPayload(modelName, providerName, systemInstruction string, contents []*genai.Content, attempt int) {
+	logging.LogExternalContentToFile("=== DEBUG: Gemini Payload (attempt %d) ===", attempt+1)
+	logging.LogExternalContentToFile("Model: %s", modelName)
+	logging.LogExternalContentToFile("Provider: %s", providerName)
+	if systemInstruction != "" {
+		logging.LogExternalContentToFile("SystemInstruction: %s", systemInstruction)
+	}
+	for i, content := range contents {
+		if content == nil {
+			continue
+		}
+		logging.LogExternalContentToFile("Message %d [Role: %s]:", i, content.Role)
+		for j, part := range content.Parts {
+			if part == nil {
+				continue
+			}
+			if part.Text != "" {
+				logging.LogExternalContentToFile("  Part %d [Text]: %s", j, part.Text)
+			}
+			if part.InlineData != nil {
+				mimeType := part.InlineData.MIMEType
+				byteLen := len(part.InlineData.Data)
+				switch {
+				case strings.HasPrefix(mimeType, "image/"):
+					logging.LogExternalContentToFile("  Part %d [Image]: %s, %d bytes", j, mimeType, byteLen)
+				case strings.HasPrefix(mimeType, "audio/"):
+					logging.LogExternalContentToFile("  Part %d [Audio]: %s, %d bytes", j, mimeType, byteLen)
+				case mimeType == "application/pdf":
+					logging.LogExternalContentToFile("  Part %d [PDF Inline]: %s, %d bytes", j, mimeType, byteLen)
+				default:
+					logging.LogExternalContentToFile("  Part %d [Data]: %s, %d bytes", j, mimeType, byteLen)
+				}
+			}
+			if part.FileData != nil {
+				logging.LogExternalContentToFile("  Part %d [PDF File]: %s (%s)", j, part.FileData.FileURI, part.FileData.MIMEType)
+			}
+		}
+	}
+	logging.LogExternalContentToFile("=== END DEBUG ===\n")
 }
 
 // GenerateImage generates an image using a Gemini image generation model (e.g., Imagen).

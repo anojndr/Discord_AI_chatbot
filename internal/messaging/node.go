@@ -22,8 +22,8 @@ type MsgNode struct {
 	FetchParentFailed bool `json:"fetch_parent_failed"`
 
 	// Web search information
-	WebSearchPerformed bool `json:"web_search_performed"`
-	SearchResultCount  int  `json:"search_result_count"`
+	WebSearchPerformed bool               `json:"web_search_performed"`
+	SearchResultCount  int                `json:"search_result_count"`
 	GroundingMetadata  *GroundingMetadata `json:"grounding_metadata,omitempty"`
 	DetectedURLs       []string           `json:"detected_urls,omitempty"`
 
@@ -62,6 +62,7 @@ type PDFContent struct {
 	Type     string `json:"type"`
 	MIMEType string `json:"mime_type"`
 	URL      string `json:"url"`
+	Filename string `json:"filename,omitempty"`
 	Data     []byte `json:"data,omitempty"`
 }
 
@@ -90,7 +91,7 @@ type OpenAIMessage struct {
 
 // GroundingMetadata stores the metadata for grounding with Google Search
 type GroundingMetadata struct {
-	WebSearchQueries []string        `json:"web_search_queries"`
+	WebSearchQueries []string         `json:"web_search_queries"`
 	GroundingChunks  []GroundingChunk `json:"grounding_chunks"`
 }
 
@@ -101,7 +102,7 @@ type GroundingChunk struct {
 		Title string `json:"title"`
 	} `json:"web"`
 }
-	
+
 // NewMsgNode creates a new message node
 func NewMsgNode() *MsgNode {
 	return &MsgNode{

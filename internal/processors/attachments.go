@@ -114,15 +114,16 @@ func ProcessAttachments(ctx context.Context, attachments []*discordgo.MessageAtt
 				result := indexedResult{
 					idx: index,
 					pdf: messaging.PDFContent{
-						Type:     "pdf_file",
+						Type: "pdf_file",
 						MIMEType: func() string {
 							if attachment.ContentType != "" {
 								return attachment.ContentType
 							}
 							return "application/pdf"
 						}(),
-						URL:  attachment.URL,
-						Data: data,
+						URL:      attachment.URL,
+						Filename: attachment.Filename,
+						Data:     data,
 					},
 				}
 
