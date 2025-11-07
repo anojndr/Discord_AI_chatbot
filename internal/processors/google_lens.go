@@ -236,7 +236,7 @@ func (g *GoogleLensClient) searchWithKey(ctx context.Context, imageURL string, o
 
 	// Set default type if not provided
 	searchType := "all"
-	safeSearch := "off" // Default to safe search off
+    var safeSearch string // Do not override SerpAPI/Google default unless explicitly provided
 	var queryValue string
 
 	if opts != nil {
@@ -274,8 +274,10 @@ func (g *GoogleLensClient) searchWithKey(ctx context.Context, imageURL string, o
 
 	// type parameter is required per latest API docs
 	values.Set("type", searchType)
-	// Set safe search parameter
-	values.Set("safe", safeSearch)
+    // Set safe search parameter only when specified (default behavior is managed by Google)
+    if safeSearch != "" {
+        values.Set("safe", safeSearch)
+    }
 
 	if queryValue != "" {
 		if isQuerySupportedForType(searchType) {
